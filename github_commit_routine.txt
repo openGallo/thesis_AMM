@@ -1,0 +1,111 @@
+GitHub Commit Routine for Thesis Project
+========================================
+
+Project folder:
+C:\Courses\thesis_AMM
+
+GitHub repository:
+https://github.com/openGallo/thesis_AMM
+
+
+1. Routine every time you want to save and upload your latest work
+------------------------------------------------------------------
+
+Open the VS Code terminal and run:
+
+cd C:\Courses\thesis_AMM
+git status
+git add .
+git status
+git commit -m "Describe what changed"
+git push
+
+
+Example:
+
+cd C:\Courses\thesis_AMM
+git status
+git add .
+git status
+git commit -m "Update DEX data import scripts"
+git push
+
+
+2. If there is nothing to commit
+--------------------------------
+
+If Git says:
+
+nothing to commit, working tree clean
+
+This means everything is already saved locally and uploaded to GitHub.
+
+
+3. Good commit messages for the thesis
+--------------------------------------
+
+Use clear messages such as:
+
+git commit -m "Update The Graph DEX import scripts"
+git commit -m "Add DEX data cleaning script"
+git commit -m "Update dataset manifest"
+git commit -m "Add CEX benchmark import script"
+git commit -m "Generate first empirical figures"
+git commit -m "Update AMM simulation code"
+git commit -m "Update thesis progress slides"
+
+
+4. Recommended routine before each work session
+-----------------------------------------------
+
+At the beginning of a work session:
+
+cd C:\Courses\thesis_AMM
+git pull
+git status
+
+
+After working:
+
+git status
+git add .
+git status
+git commit -m "Describe what changed"
+git push
+
+
+5. If you only want to commit your DEX scripts
+----------------------------------------------
+
+cd C:\Courses\thesis_AMM
+git add scripts\import_data\DEX
+git commit -m "Update DEX import scripts"
+git push
+
+
+6. Windows line-ending warning
+------------------------------
+
+If you see this warning:
+
+LF will be replaced by CRLF
+
+Do not worry. This is normal on Windows and does not mean your commit failed.
+
+
+7. Simple rule
+--------------
+
+Use GitHub for:
+- code
+- documentation
+- README files
+- small examples
+- thesis outputs if not too large
+
+Do not use normal GitHub for:
+- huge raw DEX transaction files
+- huge processed datasets
+- API keys
+- .env files
+- private credentials

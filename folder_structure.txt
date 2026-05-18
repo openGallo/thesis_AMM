@@ -1,0 +1,30 @@
+thesis_AMM/
+│
+├── data_raw/
+│   ├── DEX/
+│   ├── CEX/
+│   └── other/
+│
+├── data_processed/
+│   ├── DEX/
+│   ├── CEX/
+│   └── other/
+│
+├── scripts/
+│   ├── import_data/
+│   │	   ├── DEX/
+│   │	   ├── CEX/
+│   │      └── other/
+│   ├──	process_data/
+│   │	   ├── DEX/
+│   │	   ├── CEX/
+│   │      └── other/│
+│   └── thesis/
+│
+├── output/
+│   ├── tables/
+│   └── figures/
+│
+└── docs/
+    ├── data_dictionary.md
+    └── dataset_manifest.csv
