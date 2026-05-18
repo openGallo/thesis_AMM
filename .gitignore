@@ -1,0 +1,74 @@
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# ============================================================
+# Secrets / API keys
+# ============================================================
+.env
+*.env
+config_private.*
+secrets.*
+THEGRAPH_API_KEY*
+
+# ============================================================
+# Large raw data
+# Do not upload full raw blockchain datasets to normal GitHub
+# ============================================================
+data_raw/**/*.csv
+data_raw/**/*.parquet
+data_raw/**/*.zip
+data_raw/**/*.json
+data_raw/**/*.feather
+
+# ============================================================
+# Large processed data
+# ============================================================
+data_processed/**/*.csv
+data_processed/**/*.parquet
+data_processed/**/*.feather
+
+# ============================================================
+# Large outputs
+# ============================================================
+output/figures/*.png
+output/figures/*.jpg
+output/figures/*.jpeg
+output/figures/*.pdf
+output/tables/*.csv
+output/tables/*.xlsx
+
+# ============================================================
+# LaTeX auxiliary files
+# ============================================================
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+*.nav
+*.snm
+*.vrb
+
+# ============================================================
+# OS files
+# ============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
