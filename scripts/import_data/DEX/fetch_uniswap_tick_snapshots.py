@@ -338,7 +338,7 @@ def find_month_end_blocks(data_dir: str) -> pd.DataFrame:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    project_root = Path(r"C:\Courses\thesis_AMM")
+    project_root = Path(__file__).resolve().parents[3]
     data_dir     = project_root / "data_raw" / "DEX"
     snapshot_dir = data_dir / "tick_snapshots"
     snapshot_dir.mkdir(parents=True, exist_ok=True)

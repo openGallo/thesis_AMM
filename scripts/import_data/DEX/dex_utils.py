@@ -71,6 +71,7 @@ def run_query(query: str, variables: Optional[dict] = None) -> dict:
                 raise
             print(f"[Retry {attempt}/{MAX_RETRIES}] {exc}. Waiting {RETRY_WAIT}s...")
             time.sleep(RETRY_WAIT)
+    raise RuntimeError("run_query exhausted retries without raising")  # unreachable
 
 # ── Type-safe coercions ───────────────────────────────────────────────────────
 

@@ -16,7 +16,7 @@ from pathlib import Path
 # Project paths
 # ---------------------------------------------------------------------
 
-PROJECT_ROOT = Path(r"C:\Courses\thesis_AMM")
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "data_raw" / "CEX"
 
 BINANCE_OUTPUT_ROOT = DEFAULT_OUTPUT_ROOT / "binance"

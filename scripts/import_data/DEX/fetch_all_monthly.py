@@ -9,10 +9,10 @@ Uses timestamp-cursor pagination — no row limit, no skip limit.
 Pool:   USDC/ETH 0.05% on Ethereum mainnet
 Period: 2021-05-05 00:00:00 UTC → 2026-04-30 23:59:59 UTC
 
-Output files, saved in /data/ relative to this script:
-    data/swaps_YYYY_MM.csv
-    data/mints_YYYY_MM.csv
-    data/burns_YYYY_MM.csv
+Output files:
+    data_raw/DEX/swaps_YYYY_MM.csv
+    data_raw/DEX/mints_YYYY_MM.csv
+    data_raw/DEX/burns_YYYY_MM.csv
 
 Setup (VS Code terminal — Windows):
     C:\\Interpreters\\python.exe -m pip install requests pandas
@@ -28,6 +28,7 @@ have output files are skipped; set OVERWRITE = True to re-fetch them.
 import os
 import time
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 
@@ -312,8 +313,7 @@ def fetch_all(query: str, entity: str, output_file: str, start_ts: int, end_ts: 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    data_dir   = os.path.join(script_dir, "data")
+    data_dir = str(Path(__file__).resolve().parents[3] / "data_raw" / "DEX")
     os.makedirs(data_dir, exist_ok=True)
 
     print("=" * 60)

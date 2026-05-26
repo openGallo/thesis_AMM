@@ -253,7 +253,7 @@ def fetch_entity(
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    project_root = Path(r"C:\Courses\thesis_AMM")
+    project_root = Path(__file__).resolve().parents[3]
     data_dir     = project_root / "data_raw" / "DEX"
     data_dir.mkdir(parents=True, exist_ok=True)
 
