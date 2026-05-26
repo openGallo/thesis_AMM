@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Iterable
 
 from cex_config import BINANCE_OUTPUT_ROOT, DEFAULT_SLEEP_BETWEEN_DOWNLOADS_SECONDS
-from binance_download_utils import download_one_binance_public_file, periods_for_granularity
+from binance_download_utils import DownloadResult, download_one_binance_public_file, periods_for_granularity
 
 
 def download_binance_agg_trades(
@@ -28,7 +28,7 @@ def download_binance_agg_trades(
     extract: bool = True,
     keep_zip: bool = True,
     sleep_seconds: float = DEFAULT_SLEEP_BETWEEN_DOWNLOADS_SECONDS,
-) -> list:
+) -> list[DownloadResult]:
     periods = periods_for_granularity(start_date, end_date, granularity)
     results = []
 

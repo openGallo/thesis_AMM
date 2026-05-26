@@ -26,26 +26,27 @@ from typing import Any
 
 import requests
 
+from binance_download_utils import utc_now_iso
 from cex_config import BINANCE_OUTPUT_ROOT, BINANCE_SPOT_API_BASE_URL, REQUEST_TIMEOUT_SECONDS
 
 
 DEFAULT_DEPTH_BPS = [1, 5, 10, 50]
 
 
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def utc_now_iso() -> str:
-    return utc_now().replace(microsecond=0).isoformat()
-
-
-def fetch_depth(symbol: str, limit: int = 1000) -> dict[str, Any]:
-    url = f"{BINANCE_SPOT_API_BASE_URL}/api/v3/depth"
-    params = {"symbol": symbol.upper().strip(), "limit": limit}
-    response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
-    response.raise_for_status()
-    return response.json()
+def fetch_depth(symbol: str, limit: int = 1000, max_retries: int = 3) -> dict[str, Any]:
+    url     = f"{BINANCE_SPOT_API_BASE_URL}/api/v3/depth"
+    params  = {"symbol": symbol.upper().strip(), "limit": limit}
+    last_exc: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
+            response.raise_for_status()
+            return response.json()
+        except Exception as exc:
+            last_exc = exc
+            if attempt < max_retries:
+                time.sleep(2.0)
+    raise RuntimeError(f"fetch_depth({symbol}) failed after {max_retries} attempts") from last_exc
 
 
 def notional_depth_within_bps(
@@ -154,24 +155,25 @@ def collect_orderbook_snapshots(
 
     try:
         while run_forever or (time.time() - started < seconds):
-            date_key = utc_now().strftime("%Y%m%d")
+            loop_start = time.monotonic()
+            date_key   = datetime.now(timezone.utc).strftime("%Y%m%d")
 
             for symbol in symbols:
                 try:
                     raw = fetch_depth(symbol=symbol, limit=limit)
                     row = summarize_depth(symbol=symbol, raw_depth=raw, depth_bps=depth_bps)
 
-                    symbol_dir = output_root / "live_orderbook" / symbol
+                    symbol_dir   = output_root / "live_orderbook" / symbol
                     summary_path = symbol_dir / f"depth_summary_{date_key}.csv"
                     append_csv_row(summary_path, row)
 
                     if save_full_snapshots:
                         payload = {
                             "timestamp_utc": row["timestamp_utc"],
-                            "exchange": "binance",
-                            "symbol": symbol,
-                            "depth_limit": limit,
-                            "depth": raw,
+                            "exchange":      "binance",
+                            "symbol":        symbol,
+                            "depth_limit":   limit,
+                            "depth":         raw,
                         }
                         snapshot_path = symbol_dir / f"depth_snapshots_{date_key}.ndjson"
                         append_json_line(snapshot_path, payload)
@@ -184,7 +186,10 @@ def collect_orderbook_snapshots(
                 except Exception as exc:
                     print(f"[ERROR] {symbol}: {type(exc).__name__}: {exc}")
 
-            time.sleep(interval_sec)
+            elapsed    = time.monotonic() - loop_start
+            sleep_for  = max(0.0, interval_sec - elapsed)
+            if sleep_for > 0:
+                time.sleep(sleep_for)
 
     except KeyboardInterrupt:
         print("Stopped by user.")

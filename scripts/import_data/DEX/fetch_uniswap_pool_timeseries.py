@@ -20,51 +20,23 @@ These are useful for:
 
 Setup:
     C:\\Interpreters\\python.exe -m pip install requests pandas
-    setx THEGRAPH_API_KEY "your_new_api_key_here"
+    setx THEGRAPH_API_KEY "your_key_here"
     Restart terminal.
     C:\\Interpreters\\python.exe C:\\Courses\\thesis_AMM\\scripts\\import_data\\DEX\\fetch_uniswap_pool_timeseries.py
 """
 
-import os
 import time
-import requests
-import pandas as pd
-from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Configuration
-# ─────────────────────────────────────────────────────────────────────────────
-
-API_KEY = os.getenv("THEGRAPH_API_KEY")
-
-if not API_KEY:
-    raise RuntimeError(
-        "Missing THEGRAPH_API_KEY. Set it with:\n"
-        '    setx THEGRAPH_API_KEY "your_new_api_key_here"\n'
-        "Then restart your terminal."
-    )
-
-POOL = "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640".lower()
-
-URL = (
-    f"https://gateway.thegraph.com/api/{API_KEY}"
-    f"/subgraphs/id/5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV"
+from dex_utils import (
+    POOL, START_TS, END_TS, BATCH, SLEEP,
+    run_query, safe_int, safe_float,
 )
 
-START_TS = 1620172800
-END_TS   = 1777593599
 
-BATCH       = 1000
-SLEEP       = 0.35
-MAX_RETRIES = 5
-RETRY_WAIT  = 10
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# GraphQL queries
-# ─────────────────────────────────────────────────────────────────────────────
+# ── GraphQL queries ───────────────────────────────────────────────────────────
 
 POOL_HOUR_QUERY = """
 query($pool: String!, $start: Int!, $end: Int!, $first: Int!, $lastId: String!) {
@@ -180,61 +152,24 @@ BUNDLE_QUERY = """
 """
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-def run_query(query, variables=None):
-    payload = {"query": query}
-    if variables is not None:
-        payload["variables"] = variables
-
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            response = requests.post(URL, json=payload, timeout=90)
-            response.raise_for_status()
-            result = response.json()
-
-            if "errors" in result:
-                raise RuntimeError(result["errors"])
-
-            return result["data"]
-
-        except Exception as exc:
-            if attempt == MAX_RETRIES:
-                raise
-            print(f"[Retry {attempt}/{MAX_RETRIES}] {exc}. Waiting {RETRY_WAIT}s...")
-            time.sleep(RETRY_WAIT)
-
-
-def safe_int(x):
-    if x is None or x == "":
-        return None
-    return int(x)
-
-
-def safe_float(x):
-    if x is None or x == "":
-        return None
-    return float(x)
-
-
-def fetch_paginated(query, entity_name):
-    rows = []
+def fetch_paginated(query: str, entity_name: str) -> list:
+    rows    = []
     last_id = ""
     query_n = 0
 
     while True:
         variables = {
-            "pool": POOL,
-            "start": START_TS,
-            "end": END_TS,
-            "first": BATCH,
+            "pool":   POOL,
+            "start":  START_TS,
+            "end":    END_TS,
+            "first":  BATCH,
             "lastId": last_id,
         }
 
-        data = run_query(query, variables)
-        batch = data[entity_name]
+        data    = run_query(query, variables)
+        batch   = data[entity_name]
         query_n += 1
 
         if not batch:
@@ -253,83 +188,67 @@ def fetch_paginated(query, entity_name):
     return rows
 
 
-def flatten_pool_hour(rows):
+def flatten_pool_hour(rows: list) -> pd.DataFrame:
     out = []
-
     for r in rows:
         ts = safe_int(r["periodStartUnix"])
-
         out.append({
-            "id": r["id"],
+            "id":               r["id"],
             "period_start_unix": ts,
-            "datetime": pd.to_datetime(ts, unit="s", utc=True),
-
-            "liquidity": r.get("liquidity"),
-            "sqrt_price": r.get("sqrtPrice"),
-            "tick": safe_int(r.get("tick")),
-
-            # For USDC/WETH, token0Price is approximately USDC per WETH.
-            "token0_price": safe_float(r.get("token0Price")),
-            "token1_price": safe_float(r.get("token1Price")),
-
-            "tvl_usd": safe_float(r.get("tvlUSD")),
-            "volume_token0": safe_float(r.get("volumeToken0")),
-            "volume_token1": safe_float(r.get("volumeToken1")),
-            "volume_usd": safe_float(r.get("volumeUSD")),
-            "fees_usd": safe_float(r.get("feesUSD")),
-            "tx_count": safe_int(r.get("txCount")),
-
-            "open": safe_float(r.get("open")),
-            "high": safe_float(r.get("high")),
-            "low": safe_float(r.get("low")),
-            "close": safe_float(r.get("close")),
+            "datetime":         pd.to_datetime(ts, unit="s", utc=True),
+            "liquidity":        r.get("liquidity"),
+            "sqrt_price":       r.get("sqrtPrice"),
+            "tick":             safe_int(r.get("tick")),
+            "token0_price":     safe_float(r.get("token0Price")),
+            "token1_price":     safe_float(r.get("token1Price")),
+            "tvl_usd":          safe_float(r.get("tvlUSD")),
+            "volume_token0":    safe_float(r.get("volumeToken0")),
+            "volume_token1":    safe_float(r.get("volumeToken1")),
+            "volume_usd":       safe_float(r.get("volumeUSD")),
+            "fees_usd":         safe_float(r.get("feesUSD")),
+            "tx_count":         safe_int(r.get("txCount")),
+            "open":             safe_float(r.get("open")),
+            "high":             safe_float(r.get("high")),
+            "low":              safe_float(r.get("low")),
+            "close":            safe_float(r.get("close")),
         })
-
     df = pd.DataFrame(out)
     if not df.empty:
         df = df.sort_values("period_start_unix")
     return df
 
 
-def flatten_pool_day(rows):
+def flatten_pool_day(rows: list) -> pd.DataFrame:
     out = []
-
     for r in rows:
         ts = safe_int(r["date"])
-
         out.append({
-            "id": r["id"],
-            "date_unix": ts,
-            "date": pd.to_datetime(ts, unit="s", utc=True).date(),
-
-            "liquidity": r.get("liquidity"),
-            "sqrt_price": r.get("sqrtPrice"),
-            "tick": safe_int(r.get("tick")),
-
-            # For USDC/WETH, token0Price is approximately USDC per WETH.
+            "id":           r["id"],
+            "date_unix":    ts,
+            "date":         pd.to_datetime(ts, unit="s", utc=True).date(),
+            "liquidity":    r.get("liquidity"),
+            "sqrt_price":   r.get("sqrtPrice"),
+            "tick":         safe_int(r.get("tick")),
             "token0_price": safe_float(r.get("token0Price")),
             "token1_price": safe_float(r.get("token1Price")),
-
-            "tvl_usd": safe_float(r.get("tvlUSD")),
+            "tvl_usd":      safe_float(r.get("tvlUSD")),
             "volume_token0": safe_float(r.get("volumeToken0")),
             "volume_token1": safe_float(r.get("volumeToken1")),
-            "volume_usd": safe_float(r.get("volumeUSD")),
-            "fees_usd": safe_float(r.get("feesUSD")),
-            "tx_count": safe_int(r.get("txCount")),
-
-            "open": safe_float(r.get("open")),
-            "high": safe_float(r.get("high")),
-            "low": safe_float(r.get("low")),
-            "close": safe_float(r.get("close")),
+            "volume_usd":   safe_float(r.get("volumeUSD")),
+            "fees_usd":     safe_float(r.get("feesUSD")),
+            "tx_count":     safe_int(r.get("txCount")),
+            "open":         safe_float(r.get("open")),
+            "high":         safe_float(r.get("high")),
+            "low":          safe_float(r.get("low")),
+            "close":        safe_float(r.get("close")),
         })
-
     df = pd.DataFrame(out)
     if not df.empty:
         df = df.sort_values("date_unix")
     return df
 
 
-def flatten_pool_metadata(pool):
+def flatten_pool_metadata(pool: dict) -> pd.DataFrame:
     if not pool:
         return pd.DataFrame()
 
@@ -337,49 +256,44 @@ def flatten_pool_metadata(pool):
     token1 = pool.get("token1") or {}
 
     row = {
-        "pool_id": pool.get("id"),
-        "created_at_timestamp": safe_int(pool.get("createdAtTimestamp")),
-        "created_at_datetime": pd.to_datetime(
+        "pool_id":                   pool.get("id"),
+        "created_at_timestamp":      safe_int(pool.get("createdAtTimestamp")),
+        "created_at_datetime":       pd.to_datetime(
             safe_int(pool.get("createdAtTimestamp")), unit="s", utc=True
         ) if pool.get("createdAtTimestamp") is not None else None,
-        "created_at_block_number": safe_int(pool.get("createdAtBlockNumber")),
-
-        "fee_tier": safe_int(pool.get("feeTier")),
-        "liquidity": pool.get("liquidity"),
-        "sqrt_price": pool.get("sqrtPrice"),
-        "tick": safe_int(pool.get("tick")),
-        "token0_price": safe_float(pool.get("token0Price")),
-        "token1_price": safe_float(pool.get("token1Price")),
-        "volume_usd": safe_float(pool.get("volumeUSD")),
-        "fees_usd": safe_float(pool.get("feesUSD")),
-        "tx_count": safe_int(pool.get("txCount")),
-        "tvl_usd": safe_float(pool.get("totalValueLockedUSD")),
-        "tvl_token0": safe_float(pool.get("totalValueLockedToken0")),
-        "tvl_token1": safe_float(pool.get("totalValueLockedToken1")),
-
-        "token0_id": token0.get("id"),
-        "token0_symbol": token0.get("symbol"),
-        "token0_name": token0.get("name"),
-        "token0_decimals": safe_int(token0.get("decimals")),
-        "token0_derived_eth": safe_float(token0.get("derivedETH")),
-
-        "token1_id": token1.get("id"),
-        "token1_symbol": token1.get("symbol"),
-        "token1_name": token1.get("name"),
-        "token1_decimals": safe_int(token1.get("decimals")),
-        "token1_derived_eth": safe_float(token1.get("derivedETH")),
+        "created_at_block_number":   safe_int(pool.get("createdAtBlockNumber")),
+        "fee_tier":                  safe_int(pool.get("feeTier")),
+        "liquidity":                 pool.get("liquidity"),
+        "sqrt_price":                pool.get("sqrtPrice"),
+        "tick":                      safe_int(pool.get("tick")),
+        "token0_price":              safe_float(pool.get("token0Price")),
+        "token1_price":              safe_float(pool.get("token1Price")),
+        "volume_usd":                safe_float(pool.get("volumeUSD")),
+        "fees_usd":                  safe_float(pool.get("feesUSD")),
+        "tx_count":                  safe_int(pool.get("txCount")),
+        "tvl_usd":                   safe_float(pool.get("totalValueLockedUSD")),
+        "tvl_token0":                safe_float(pool.get("totalValueLockedToken0")),
+        "tvl_token1":                safe_float(pool.get("totalValueLockedToken1")),
+        "token0_id":                 token0.get("id"),
+        "token0_symbol":             token0.get("symbol"),
+        "token0_name":               token0.get("name"),
+        "token0_decimals":           safe_int(token0.get("decimals")),
+        "token0_derived_eth":        safe_float(token0.get("derivedETH")),
+        "token1_id":                 token1.get("id"),
+        "token1_symbol":             token1.get("symbol"),
+        "token1_name":               token1.get("name"),
+        "token1_decimals":           safe_int(token1.get("decimals")),
+        "token1_derived_eth":        safe_float(token1.get("derivedETH")),
     }
 
     return pd.DataFrame([row])
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Main
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Main ──────────────────────────────────────────────────────────────────────
 
-def main():
+def main() -> None:
     project_root = Path(r"C:\Courses\thesis_AMM")
-    data_dir = project_root / "data_raw" / "DEX"
+    data_dir     = project_root / "data_raw" / "DEX"
     data_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 70)
@@ -387,36 +301,36 @@ def main():
     print("=" * 70)
 
     # Pool metadata
-    metadata = run_query(POOL_METADATA_QUERY, {"pool": POOL})
-    df_meta = flatten_pool_metadata(metadata["pool"])
-    metadata_file = os.path.join(data_dir, "pool_metadata_current.csv")
+    metadata    = run_query(POOL_METADATA_QUERY, {"pool": POOL})
+    df_meta     = flatten_pool_metadata(metadata["pool"])
+    metadata_file = data_dir / "pool_metadata_current.csv"
     df_meta.to_csv(metadata_file, index=False)
     print(f"Saved {metadata_file}")
 
-    # Current bundle
-    bundle = run_query(BUNDLE_QUERY)
+    # Current ETH/USD bundle
+    bundle    = run_query(BUNDLE_QUERY)
     df_bundle = pd.DataFrame([{
-        "id": bundle["bundle"]["id"],
-        "eth_price_usd": safe_float(bundle["bundle"]["ethPriceUSD"]),
+        "id":              bundle["bundle"]["id"],
+        "eth_price_usd":  safe_float(bundle["bundle"]["ethPriceUSD"]),
         "downloaded_at_utc": pd.Timestamp.utcnow(),
     }])
-    bundle_file = os.path.join(data_dir, "bundle_current.csv")
+    bundle_file = data_dir / "bundle_current.csv"
     df_bundle.to_csv(bundle_file, index=False)
     print(f"Saved {bundle_file}")
 
     # Hourly data
     print("\nFetching poolHourDatas...")
     hour_rows = fetch_paginated(POOL_HOUR_QUERY, "poolHourDatas")
-    df_hour = flatten_pool_hour(hour_rows)
-    hour_file = os.path.join(data_dir, "pool_hour_data.csv")
+    df_hour   = flatten_pool_hour(hour_rows)
+    hour_file = data_dir / "pool_hour_data.csv"
     df_hour.to_csv(hour_file, index=False)
     print(f"Saved {hour_file} ({len(df_hour):,} rows)")
 
     # Daily data
     print("\nFetching poolDayDatas...")
     day_rows = fetch_paginated(POOL_DAY_QUERY, "poolDayDatas")
-    df_day = flatten_pool_day(day_rows)
-    day_file = os.path.join(data_dir, "pool_day_data.csv")
+    df_day   = flatten_pool_day(day_rows)
+    day_file = data_dir / "pool_day_data.csv"
     df_day.to_csv(day_file, index=False)
     print(f"Saved {day_file} ({len(df_day):,} rows)")
 

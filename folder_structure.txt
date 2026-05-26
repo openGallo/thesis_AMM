@@ -1,4 +1,4 @@
-thesis_AMM/
+﻿thesis_AMM/
 │
 ├── data_raw/
 │   ├── DEX/
@@ -18,7 +18,7 @@ thesis_AMM/
 │   ├──	process_data/
 │   │	   ├── DEX/
 │   │	   ├── CEX/
-│   │      └── other/│
+│   │      └── other/
 │   └── thesis/
 │
 ├── output/
