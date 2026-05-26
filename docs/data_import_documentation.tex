@@ -1,0 +1,759 @@
+\documentclass[11pt,a4paper]{article}
+
+% ============================================================
+% Packages
+% ============================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=0.75in]{geometry}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,longtable,tabularx,array,adjustbox}
+\usepackage{xcolor}
+\usepackage{xurl}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+
+\hypersetup{colorlinks=true,linkcolor=blue!45!black,urlcolor=blue!45!black,citecolor=blue!45!black}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\setlist[itemize]{leftmargin=*,itemsep=2pt,topsep=2pt}
+\setlist[enumerate]{leftmargin=*,itemsep=2pt,topsep=2pt}
+\renewcommand{\arraystretch}{1.12}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\captionsetup{font=small,labelfont=bf}
+
+\definecolor{codegray}{gray}{0.95}
+\lstset{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codegray},
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+  keepspaces=true
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Data Import \& Processing Documentation}
+\rhead{\thepage/\pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.3pt}
+
+\title{Data Import and Processing Documentation\\
+\large DEX and CEX Raw Data Pipeline for the AMM Thesis}
+\author{Arthur Gallo}
+\date{May 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document describes the complete data pipeline for the AMM thesis. It covers the DEX import module (Uniswap v3 via The Graph), the CEX import module (Binance historical data and live order-book collector), the processing pipeline that transforms raw data into analytical datasets, and the data integrity checker. All scripts use portable path resolution (\texttt{Path(\_\_file\_\_).resolve().parents[N]}) so the project works on any machine without editing paths.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Project Overview}
+
+\subsection{Purpose}
+
+The data pipeline collects and processes two complementary data sources:
+
+\begin{itemize}
+    \item \textbf{DEX data}: Uniswap v3 USDC/WETH 0.05\% pool (\texttt{0x88e6A0c2ddd26FEEb64F039a2c41296FcB3f5640}), imported from The Graph subgraph. Covers pool OHLCV, swaps, mints, burns, collects, LP positions, and tick liquidity snapshots.
+    \item \textbf{CEX data}: Binance spot market data for ETHUSDC, ETHUSDT, and USDCUSDT, imported from the Binance public archive and live REST API. Covers klines, aggregate trades, and order-book snapshots.
+\end{itemize}
+
+The key empirical comparison is:
+\[
+  d_t = \frac{p^{\mathrm{AMM}}_t - p^{*}_t}{p^{*}_t},
+\]
+where $p^{\mathrm{AMM}}_t$ is the Uniswap v3 pool price and $p^{*}_t$ is the CEX reference price.
+
+\subsection{Time Coverage}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Dataset} & \textbf{Start} & \textbf{End} \\
+\midrule
+DEX (Uniswap v3 pool inception) & 2021-05-05 & 2026-04-30 \\
+CEX ETHUSDT / USDCUSDT         & 2022-01-01 & 2026-04-30 \\
+CEX ETHUSDC (listed Aug 2022)  & 2022-08-01 & 2026-04-30 \\
+\bottomrule
+\end{tabular}
+\caption{Data coverage by source.}
+\end{table}
+
+\subsection{How to Run Everything}
+
+From the project root (\path{C:\Courses\thesis_AMM}):
+
+\begin{lstlisting}
+# Step 1: set API key once (then restart terminal)
+setx THEGRAPH_API_KEY "your_key_here"
+
+# Step 2: import CEX data (~20-60 min)
+python scripts/import_data/run_cex.py
+
+# Step 3: import DEX data (~1-3 hours, rate-limited)
+python scripts/import_data/run_dex.py --skip-ticks
+
+# Step 4: verify data integrity
+python scripts/check_data_integrity.py
+
+# Step 5: run all processing scripts (~5 min)
+python scripts/process_data/run_all.py
+\end{lstlisting}
+
+Steps 2 and 3 are independent and can run simultaneously in separate terminals.
+
+% ============================================================
+\section{Project Folder Structure}
+
+\begin{lstlisting}
+thesis_AMM/
+|
++-- scripts/
+|   +-- import_data/
+|   |   +-- run_cex.py              <- run all CEX imports
+|   |   +-- run_dex.py              <- run all DEX imports
+|   |   +-- CEX/
+|   |   |   +-- main_import_cex.py  Binance klines + aggTrades
+|   |   |   +-- fetch_binance_klines.py
+|   |   |   +-- fetch_binance_agg_trades.py
+|   |   |   +-- collect_binance_orderbook_rest.py
+|   |   |   +-- binance_download_utils.py
+|   |   |   +-- cex_config.py
+|   |   +-- DEX/
+|   |       +-- fetch_uniswap_pool_timeseries.py
+|   |       +-- fetch_all_monthly.py
+|   |       +-- fetch_uniswap_extra_events.py
+|   |       +-- fetch_uniswap_positions.py
+|   |       +-- fetch_uniswap_tick_snapshots.py
+|   |       +-- dex_utils.py
+|   |
+|   +-- process_data/
+|   |   +-- run_all.py              <- run full processing pipeline
+|   |   +-- CEX/
+|   |   |   +-- process_cex_price.py
+|   |   |   +-- process_cex_orderbook.py
+|   |   +-- DEX/
+|   |   |   +-- process_dex_pool_hourly.py
+|   |   |   +-- process_dex_swaps.py
+|   |   |   +-- process_dex_lp_positions.py
+|   |   |   +-- process_dex_lvr.py
+|   |   +-- merged/
+|   |   |   +-- process_merged_panel.py
+|   |   +-- calibration/
+|   |       +-- process_calibration.py
+|   |
+|   +-- check_data_integrity.py     <- verify all imports
+|
++-- data_raw/      (gitignored -- populated by import scripts)
+|   +-- DEX/
+|   +-- CEX/binance/
+|
++-- data_processed/ (gitignored -- populated by processing scripts)
+|   +-- DEX/
+|   +-- CEX/
+|   +-- merged/
+|   +-- calibration/
+|
++-- output/
+|   +-- figures/
+|   +-- tables/
+|
++-- docs/
++-- .env                            (gitignored -- holds API key)
++-- .gitignore
++-- README.md
+\end{lstlisting}
+
+\subsection{Path Portability}
+
+All scripts compute the project root dynamically:
+\begin{lstlisting}
+PROJECT_ROOT = Path(__file__).resolve().parents[N]
+\end{lstlisting}
+where $N$ depends on depth: scripts two levels deep from root use \texttt{parents[2]}, scripts three levels deep use \texttt{parents[3]}. No hardcoded paths exist anywhere in the codebase.
+
+% ============================================================
+\section{DEX Import Module}
+
+\subsection{Data Source}
+
+DEX data is fetched from The Graph using GraphQL queries against the Uniswap v3 subgraph:
+\begin{lstlisting}
+Subgraph ID: 5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV
+Pool:        0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640
+\end{lstlisting}
+
+An API key is required. Store it in \texttt{.env} at the project root:
+\begin{lstlisting}
+THEGRAPH_API_KEY=your_key_here
+\end{lstlisting}
+The runner script loads this file automatically. Alternatively set the environment variable with \texttt{setx}.
+
+\subsection{Script Inventory}
+
+\begin{longtable}{L{5.2cm}L{9.2cm}}
+\caption{DEX import scripts.}\\
+\toprule
+\textbf{File} & \textbf{Responsibility} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{File} & \textbf{Responsibility} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\texttt{run\_dex.py} & Top-level orchestrator. Runs all five DEX import scripts in order. Checks for \texttt{THEGRAPH\_API\_KEY} before starting. Accepts \texttt{--skip-ticks} to omit the slowest step. \\
+\texttt{dex\_utils.py} & Shared utilities: pool address, subgraph URL, API key loader, \texttt{run\_query()} with exponential-backoff retry (10 attempts, 15s base), month-range builder. \\
+\texttt{fetch\_uniswap\_pool\_timeseries.py} & Fetches hourly and daily pool OHLCV, TVL, fees, liquidity, sqrt price, and tick. Outputs \texttt{pool\_hour\_data.csv} and \texttt{pool\_day\_data.csv}. Also fetches \texttt{pool\_metadata\_current.csv} and \texttt{bundle\_current.csv}. \\
+\texttt{fetch\_all\_monthly.py} & Fetches swap, mint, and burn events month by month from 2021-05 to 2026-04. Outputs \texttt{swaps\_YYYY\_MM.csv}, \texttt{mints\_YYYY\_MM.csv}, \texttt{burns\_YYYY\_MM.csv}. \\
+\texttt{fetch\_uniswap\_extra\_events.py} & Fetches collect and flash events month by month. Outputs \texttt{collects\_YYYY\_MM.csv} and \texttt{flashes\_YYYY\_MM.csv}. \\
+\texttt{fetch\_uniswap\_positions.py} & Fetches all current LP positions with full accounting fields. Outputs \texttt{positions\_current.csv}. \\
+\texttt{fetch\_uniswap\_tick\_snapshots.py} & Fetches month-end tick liquidity snapshots. Slow (one full tick scan per month). Outputs to \texttt{data\_raw/DEX/tick\_snapshots/}. Run separately with \texttt{--skip-ticks} omitted. \\
+\end{longtable}
+
+\subsection{Running the DEX Import}
+
+\begin{lstlisting}
+# Full import (from project root)
+python scripts/import_data/run_dex.py
+
+# Skip tick snapshots (faster; run ticks separately later)
+python scripts/import_data/run_dex.py --skip-ticks
+\end{lstlisting}
+
+The runner checks for the API key upfront and exits with a clear message if it is missing.
+
+\subsection{Retry and Rate-Limit Behavior}
+
+All queries go through \texttt{run\_query()} in \texttt{dex\_utils.py}:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Parameter} & \textbf{Value} & \textbf{Purpose} \\
+\midrule
+\texttt{BATCH}       & 1000   & Rows per GraphQL query (The Graph maximum). \\
+\texttt{SLEEP}       & 0.35 s & Pause between successful queries. \\
+\texttt{MAX\_RETRIES} & 10    & Attempts before raising an error. \\
+\texttt{RETRY\_WAIT} & 15 s  & Base wait; doubles each attempt (15, 30, 60, 120, 120, \ldots). \\
+\bottomrule
+\end{tabular}
+\caption{Query tuning constants in \texttt{dex\_utils.py}.}
+\end{table}
+
+\subsection{DEX Raw Output Files}
+
+\begin{longtable}{L{5.5cm}L{8.9cm}}
+\caption{Raw DEX output files in \texttt{data\_raw/DEX/}.}\\
+\toprule
+\textbf{File} & \textbf{Contents} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{File} & \textbf{Contents} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\texttt{pool\_hour\_data.csv} & Hourly pool OHLCV, TVL, fees, tx count, liquidity, sqrt price, tick. One row per hour from pool inception. \\
+\texttt{pool\_day\_data.csv} & Daily aggregation of the same fields. \\
+\texttt{pool\_metadata\_current.csv} & Single-row snapshot of current pool metadata (fee tier, total volume, TVL, token info). \\
+\texttt{bundle\_current.csv} & Current ETH price in USD from the bundle entity. \\
+\texttt{swaps\_YYYY\_MM.csv} & All swap events for the given month. Includes tx hash, amounts, price, gas, pool state at time of swap. \\
+\texttt{mints\_YYYY\_MM.csv} & All mint (liquidity add) events for the given month. Includes tick range, amounts, owner, gas. \\
+\texttt{burns\_YYYY\_MM.csv} & All burn (liquidity remove) events for the given month. Includes tick range, amounts, owner. \\
+\texttt{collects\_YYYY\_MM.csv} & All collect (fee withdrawal) events for the given month. Includes tick range, amounts, owner, gas. \\
+\texttt{flashes\_YYYY\_MM.csv} & All flash-loan events for the given month. \\
+\texttt{positions\_current.csv} & Current state of all LP positions. Includes owner, tick range, liquidity, deposited/withdrawn/collected amounts. \\
+\texttt{tick\_snapshots/*.csv} & Month-end tick liquidity snapshots. One file per month per snapshot date. \\
+\end{longtable}
+
+\subsection{Key DEX Raw Variables}
+
+\begin{longtable}{L{4.0cm}L{2.5cm}L{8.0cm}}
+\caption{Key variables in DEX raw files.}\\
+\toprule
+\textbf{Variable} & \textbf{File} & \textbf{Description} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Variable} & \textbf{File} & \textbf{Description} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\texttt{sqrt\_price\_x96} & swaps, pool & Pool price encoded as $\sqrt{p} \times 2^{96}$. Decode with $p = 10^{12}/(\text{sqrtPrice}/2^{96})^2$. \\
+\texttt{token0\_price} & pool hourly & ETH/USDC price from the subgraph (token0 is USDC, token1 is WETH). \\
+\texttt{tick} & pool, swaps & Current active tick. Convert to price: $10^{12} / 1.0001^{\text{tick}}$. \\
+\texttt{tick\_lower}, \texttt{tick\_upper} & mints, burns, collects & LP position tick range. Range width: $(1.0001^{\Delta\text{tick}}-1)\times 100\%$. \\
+\texttt{amount\_usd} & swaps, mints, burns, collects & USD notional value of the event. \\
+\texttt{gas\_price\_wei} & swaps, collects & Gas price in Wei at the time of the transaction. \\
+\texttt{gas\_cost\_eth} & swaps, collects & Gas cost in ETH ($= \texttt{gas\_used} \times \texttt{gas\_price\_wei} / 10^{18}$). \\
+\texttt{liquidity} & pool hourly, positions & Raw pool liquidity (dimensionless subgraph units). \\
+\texttt{tvl\_usd} & pool hourly & Total value locked in USD (both token reserves at current price). \\
+\texttt{fees\_usd} & pool hourly & Fees collected by the pool in the hour. \\
+\end{longtable}
+
+% ============================================================
+\section{CEX Import Module}
+
+\subsection{Purpose}
+
+The CEX module imports Binance public market data to construct an external reference market for ETH prices, realized volatility, volume, trade counts, and order-book depth. It does not clean, merge, or compute model parameters.
+
+\subsection{API Key}
+
+No API key is required for Binance public historical data. The live order-book REST endpoint is also public.
+
+\subsection{Script Inventory}
+
+\begin{longtable}{L{5.2cm}L{9.2cm}}
+\caption{CEX import scripts.}\\
+\toprule
+\textbf{File} & \textbf{Responsibility} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{File} & \textbf{Responsibility} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\texttt{run\_cex.py} & Top-level orchestrator. Calls \texttt{main\_import\_cex.py --full-history}. Accepts \texttt{--orderbook} and \texttt{--overwrite} flags. \\
+\texttt{main\_import\_cex.py} & Central controller for all CEX downloads. Manages parameters, preset, CLI overrides, and calls kline/aggTrade/orderbook sub-scripts. \\
+\texttt{cex\_config.py} & Shared configuration: project root (dynamic), Binance URLs, retry settings, kline and aggTrade column names. \\
+\texttt{binance\_download\_utils.py} & Builds URLs, creates local paths, downloads ZIPs, extracts CSVs, computes SHA-256, writes manifest rows. \\
+\texttt{fetch\_binance\_klines.py} & Downloads Binance spot kline archives for selected symbols, intervals, and date range. \\
+\texttt{fetch\_binance\_agg\_trades.py} & Downloads Binance spot aggregate-trade archives. \\
+\texttt{collect\_binance\_orderbook\_rest.py} & Collects live order-book snapshots via REST. Saves compact spread/depth CSV and optionally full NDJSON snapshots. \\
+\end{longtable}
+
+\subsection{Running the CEX Import}
+
+\begin{lstlisting}
+# Full historical import (from project root)
+python scripts/import_data/run_cex.py
+
+# With live order-book collection
+python scripts/import_data/run_cex.py --orderbook
+
+# Re-download existing files
+python scripts/import_data/run_cex.py --overwrite
+\end{lstlisting}
+
+\subsection{Full Historical Preset}
+
+The \texttt{--full-history} preset (applied automatically by \texttt{run\_cex.py}):
+
+\begin{table}[H]
+\centering
+\small
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{lll}
+\toprule
+\textbf{Parameter} & \textbf{Value} & \textbf{Purpose} \\
+\midrule
+\texttt{start\_date} & \texttt{2022-01-01} & Start of extended sample. \\
+\texttt{end\_date} & \texttt{2026-04-30} & Thesis data cut-off. \\
+\texttt{granularity} & \texttt{monthly} & Monthly archives (avoids thousands of daily requests). \\
+\texttt{symbols} & \texttt{ETHUSDC, ETHUSDT, USDCUSDT} & Clean benchmark + extended sample + stablecoin basis. \\
+\texttt{intervals} & \texttt{1m, 5m} & Minute-level and 5-minute klines. \\
+\texttt{download\_klines} & \texttt{True} & Download candle files. \\
+\texttt{download\_agg\_trades} & \texttt{True} & Download aggregate-trade files. \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\caption{Full-history preset parameters.}
+\end{table}
+
+ETHUSDC files before August 2022 are recorded as \texttt{missing\_404} in the manifest. This is expected.
+
+\subsection{Synthetic CEX Price}
+
+ETHUSDC was listed on Binance in August 2022. For earlier months, a synthetic benchmark is constructed during processing:
+\[
+  p^{\mathrm{ETH/USDC}}_t \approx \frac{p^{\mathrm{ETH/USDT}}_t}{p^{\mathrm{USDC/USDT}}_t}.
+\]
+
+\subsection{CEX Raw Output Structure}
+
+\begin{lstlisting}
+data_raw/CEX/binance/
+    download_manifest.csv
+    spot/monthly/klines/ETHUSDC/1m/*.csv
+    spot/monthly/klines/ETHUSDC/5m/*.csv
+    spot/monthly/klines/ETHUSDT/1m/*.csv
+    spot/monthly/klines/ETHUSDT/5m/*.csv
+    spot/monthly/klines/USDCUSDT/1m/*.csv
+    spot/monthly/klines/USDCUSDT/5m/*.csv
+    spot/monthly/aggTrades/ETHUSDC/*.csv
+    spot/monthly/aggTrades/ETHUSDT/*.csv
+    spot/monthly/aggTrades/USDCUSDT/*.csv
+    zip_archives/...
+    live_orderbook/ETHUSDC/depth_summary_YYYYMMDD.csv
+    live_orderbook/ETHUSDC/depth_snapshots_YYYYMMDD.ndjson
+\end{lstlisting}
+
+\subsection{Kline Column Definitions}
+
+Raw kline CSVs have no header. Column names are defined in \texttt{cex\_config.py}:
+
+\begin{longtable}{L{4.2cm}L{2.4cm}L{8.0cm}}
+\caption{Kline raw CSV variables.}\\
+\toprule
+\textbf{Column} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Column} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\texttt{open\_time\_ms} & int & Opening time in milliseconds UTC. \\
+\texttt{open} & float & Opening price of the interval. \\
+\texttt{high} & float & Highest price during the interval. \\
+\texttt{low} & float & Lowest price during the interval. \\
+\texttt{close} & float & Closing price; baseline for $p^*_t$. \\
+\texttt{volume\_base} & float & Volume in the base asset (ETH for ETH pairs). \\
+\texttt{close\_time\_ms} & int & Closing time in milliseconds UTC. \\
+\texttt{quote\_asset\_volume} & float & Volume in the quote asset (USDC or USDT). \\
+\texttt{number\_of\_trades} & int & Number of trades during the interval; proxy for $N^{\mathrm{CEX}}_t$. \\
+\texttt{taker\_buy\_base\_volume} & float & Base volume bought by takers; used for signed order-flow. \\
+\texttt{taker\_buy\_quote\_volume} & float & Quote volume corresponding to taker buys. \\
+\texttt{ignore} & raw & Unused exchange field; drop during processing. \\
+\end{longtable}
+
+\subsection{Aggregate-Trade Column Definitions}
+
+\begin{longtable}{L{4.2cm}L{2.4cm}L{8.0cm}}
+\caption{Aggregate-trade raw CSV variables.}\\
+\toprule
+\textbf{Column} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Column} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\texttt{agg\_trade\_id} & int & Unique aggregate-trade identifier. \\
+\texttt{price} & float & Trade price; used for VWAP and reference price construction. \\
+\texttt{quantity} & float & Quantity in base asset (ETH). \\
+\texttt{first\_trade\_id} & int & First underlying raw trade ID compressed into this aggregate. \\
+\texttt{last\_trade\_id} & int & Last underlying raw trade ID. \\
+\texttt{transact\_time\_ms} & int & Transaction timestamp in milliseconds UTC. \\
+\texttt{is\_buyer\_maker} & bool & True if the buyer was the maker (passive side). \\
+\texttt{is\_best\_match} & bool & Exchange match-quality flag. \\
+\end{longtable}
+
+\subsection{Order-Book Summary Variables}
+
+\begin{longtable}{L{4.5cm}L{2.2cm}L{7.9cm}}
+\caption{Variables in \texttt{depth\_summary\_YYYYMMDD.csv}.}\\
+\toprule
+\textbf{Column} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Column} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\texttt{timestamp\_utc} & datetime & UTC time of the snapshot. \\
+\texttt{symbol} & string & CEX trading pair (e.g.\ \texttt{ETHUSDC}). \\
+\texttt{best\_bid} & float & Highest bid price. \\
+\texttt{best\_ask} & float & Lowest ask price. \\
+\texttt{mid\_price} & float & $(\texttt{best\_bid}+\texttt{best\_ask})/2$. \\
+\texttt{spread\_abs} & float & $\texttt{best\_ask}-\texttt{best\_bid}$. \\
+\texttt{spread\_bps} & float & $10000 \times \texttt{spread\_abs}/\texttt{mid\_price}$. \\
+\texttt{bid\_depth\_quote\_1bps} & float & Bid-side USDC depth within 1 bp of mid. \\
+\texttt{ask\_depth\_quote\_1bps} & float & Ask-side USDC depth within 1 bp of mid. \\
+\texttt{bid\_depth\_quote\_5bps} & float & Bid-side USDC depth within 5 bp of mid. \\
+\texttt{ask\_depth\_quote\_5bps} & float & Ask-side USDC depth within 5 bp of mid. \\
+\texttt{bid\_depth\_quote\_10bps} & float & Bid-side USDC depth within 10 bp of mid. \\
+\texttt{ask\_depth\_quote\_10bps} & float & Ask-side USDC depth within 10 bp of mid. \\
+\texttt{bid\_depth\_quote\_50bps} & float & Bid-side USDC depth within 50 bp of mid. \\
+\texttt{ask\_depth\_quote\_50bps} & float & Ask-side USDC depth within 50 bp of mid. \\
+\end{longtable}
+
+Depth is computed as:
+\[
+  D^{\mathrm{bid}}_t(b) = \sum_{j \in \mathcal{B}_t(b)} p^{\mathrm{bid}}_{j} q^{\mathrm{bid}}_{j}, \quad
+  D^{\mathrm{ask}}_t(b) = \sum_{j \in \mathcal{A}_t(b)} p^{\mathrm{ask}}_{j} q^{\mathrm{ask}}_{j},
+\]
+where $\mathcal{B}_t(b)$ are bid levels within $b$ basis points below mid, and $\mathcal{A}_t(b)$ are ask levels within $b$ basis points above mid.
+
+\subsection{Download Manifest}
+
+Every download attempt appends a row to \texttt{data\_raw/CEX/binance/download\_manifest.csv}:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+\textbf{Column} & \textbf{Description} \\
+\midrule
+\texttt{timestamp\_utc} & Time the row was written. \\
+\texttt{data\_type}     & \texttt{klines} or \texttt{aggTrades}. \\
+\texttt{symbol}         & Trading pair. \\
+\texttt{interval}       & Kline interval (empty for aggTrades). \\
+\texttt{granularity}    & \texttt{daily} or \texttt{monthly}. \\
+\texttt{period}         & \texttt{YYYY-MM-DD} or \texttt{YYYY-MM}. \\
+\texttt{status}         & \texttt{downloaded\_extracted}, \texttt{missing\_404}, \texttt{failed}, etc. \\
+\texttt{bytes\_downloaded} & File size in bytes. \\
+\texttt{sha256}         & SHA-256 hash for reproducibility verification. \\
+\texttt{error}          & Error message if applicable. \\
+\bottomrule
+\end{tabular}
+\caption{Download manifest columns.}
+\end{table}
+
+% ============================================================
+\section{Processing Pipeline}
+
+\subsection{Overview}
+
+The processing pipeline reads the raw files in \texttt{data\_raw/} and writes clean analytical datasets to \texttt{data\_processed/}. It is run with a single command:
+
+\begin{lstlisting}
+python scripts/process_data/run_all.py
+python scripts/process_data/run_all.py --skip-merged  # if CEX not yet ready
+\end{lstlisting}
+
+\subsection{Pipeline Order and Dependencies}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{rll}
+\toprule
+\textbf{Step} & \textbf{Script} & \textbf{Dependencies} \\
+\midrule
+1 & \texttt{process\_cex\_price.py}       & CEX kline CSVs \\
+2 & \texttt{process\_cex\_orderbook.py}   & Live orderbook CSVs \\
+3 & \texttt{process\_dex\_pool\_hourly.py} & \texttt{pool\_hour\_data.csv}, \texttt{pool\_day\_data.csv} \\
+4 & \texttt{process\_dex\_swaps.py}       & \texttt{swaps\_YYYY\_MM.csv} (all months) \\
+5 & \texttt{process\_dex\_lp\_positions.py} & mints, burns, collects, positions\_current \\
+6 & \texttt{process\_merged\_panel.py}    & Steps 1 and 3 \\
+7 & \texttt{process\_dex\_lvr.py}         & Steps 1 and 3 \\
+8 & \texttt{process\_calibration.py}      & Steps 1, 3, 4, 7 \\
+\bottomrule
+\end{tabular}
+\caption{Processing pipeline execution order.}
+\end{table}
+
+\subsection{Processing Script Descriptions}
+
+\begin{longtable}{L{5.0cm}L{9.4cm}}
+\caption{Processing scripts in \texttt{scripts/process\_data/}.}\\
+\toprule
+\textbf{Script} & \textbf{Output and key variables computed} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Script} & \textbf{Output and key variables computed} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\texttt{process\_cex\_price.py} & Builds \texttt{cex\_price\_1m.csv} and \texttt{cex\_price\_hourly.csv}. Loads ETHUSDC, ETHUSDT, USDCUSDT klines. Constructs synthetic ETH/USDC where needed. Computes \texttt{log\_return\_1m}, rolling realized vol at 1h, 24h, 7d annualized, trade volume and count. \\
+\texttt{process\_cex\_orderbook.py} & Builds \texttt{cex\_orderbook\_daily.csv}. Aggregates live order-book snapshots to daily summaries: spread mean/median/p95, bid/ask depth at 1/5/10/50 bps. \\
+\texttt{process\_dex\_pool\_hourly.py} & Builds \texttt{dex\_pool\_hourly.csv} and \texttt{dex\_pool\_daily.csv}. Renames raw subgraph fields to clean names, adds \texttt{fee\_rate=0.0005}, \texttt{fee\_apr\_ann}, \texttt{vol\_over\_tvl}, \texttt{log\_return\_1h}. \\
+\texttt{process\_dex\_swaps.py} & Builds \texttt{dex\_swaps.csv}. Adds ETH/USDC price from \texttt{token0\_price} and cross-checked from \texttt{sqrtPriceX96}, trade direction (\texttt{buy\_eth}/\texttt{sell\_eth}), gas cost in USD, \texttt{log\_price\_change}, trade size buckets. \\
+\texttt{process\_dex\_lp\_positions.py} & Builds \texttt{dex\_lp\_positions.csv}. Aggregates mints/burns/collects by position key (owner, tick\_lower, tick\_upper). Computes \texttt{net\_pnl\_usd}, \texttt{fee\_income\_usd}, \texttt{range\_width\_pct}, \texttt{position\_type}, \texttt{duration\_days}, \texttt{is\_active}. \\
+\texttt{process\_dex\_lvr.py} & Builds \texttt{dex\_lvr\_hourly.csv}. Computes LVR via TVL approximation $\mathrm{dLVR} \approx (\mathrm{TVL}/8)\sigma^2 \,\mathrm{d}t$ and v3 active-liquidity formula. Annualized rate: $\sigma^2_{\mathrm{ann}}/8$. Also computes \texttt{lvr\_to\_fee\_ratio}. \\
+\texttt{process\_merged\_panel.py} & Builds \texttt{merged\_hourly.csv}. Outer-joins DEX and CEX hourly data with prefixes. Computes \texttt{dex\_cex\_basis\_bps} $=(p^{\mathrm{DEX}}-p^{\mathrm{CEX}})/p^{\mathrm{CEX}} \times 10000$, \texttt{arbitrage\_flag} ($|\text{basis}|>5$), and \texttt{dex\_cex\_vol\_ratio}. \\
+\texttt{process\_calibration.py} & Builds \texttt{calibration\_params.json} and \texttt{calibration\_summary.csv}. Extracts GBM parameters ($\mu$, $\sigma$), Poisson trade arrival rates ($\lambda_{\mathrm{hour}}$, $\lambda_{\mathrm{day}}$), lognormal trade-size fit, gas AR(1) model, pool state, stress regime, and LVR statistics. \\
+\end{longtable}
+
+\subsection{Processed Output Files}
+
+\begin{longtable}{L{5.8cm}L{8.6cm}}
+\caption{Processed output files in \texttt{data\_processed/}.}\\
+\toprule
+\textbf{File} & \textbf{Contents} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{File} & \textbf{Contents} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\texttt{CEX/cex\_price\_1m.csv} & 1-minute ETH/USDC panel with log returns and realized vol. \\
+\texttt{CEX/cex\_price\_hourly.csv} & Hourly OHLC, log return, realized vol (1h/24h/7d ann.), CEX volume and trade count. \\
+\texttt{CEX/cex\_orderbook\_daily.csv} & Daily spread and depth summary from live order-book snapshots. \\
+\texttt{DEX/dex\_pool\_hourly.csv} & Hourly pool OHLCV, TVL, fees, fee APR, vol/TVL, log return, liquidity, tick. \\
+\texttt{DEX/dex\_pool\_daily.csv} & Daily version of the same. \\
+\texttt{DEX/dex\_swaps.csv} & Enriched swap panel: price, direction, gas cost in USD, trade size bucket. \\
+\texttt{DEX/dex\_lp\_positions.csv} & LP position P\&L: minted, burned, collected, net P\&L, fee income, range width, duration, active status. \\
+\texttt{DEX/dex\_lvr\_hourly.csv} & Hourly LVR (TVL approx.\ and v3 formula), annualized rate, cumulative LVR, LVR/fee ratio. \\
+\texttt{merged/merged\_hourly.csv} & DEX+CEX joined panel: all DEX and CEX hourly fields with prefix, basis bps, arbitrage flag, volume ratio. \\
+\texttt{calibration/calibration\_params.json} & All simulation parameters in JSON. \\
+\texttt{calibration/calibration\_summary.csv} & Flat CSV version of the same for quick inspection. \\
+\end{longtable}
+
+\subsection{Key Derived Variables}
+
+\begin{longtable}{L{4.2cm}L{4.0cm}L{6.4cm}}
+\caption{Key variables produced by the processing pipeline.}\\
+\toprule
+\textbf{Variable} & \textbf{Formula} & \textbf{File} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Variable} & \textbf{Formula} & \textbf{File} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\texttt{eth\_usdc\_price} & $10^{12}/(p_{x96}/2^{96})^2$ & dex\_swaps, dex\_pool\_hourly \\
+\texttt{fee\_apr\_ann} & $\text{fees\_usd}/\text{tvl\_usd} \times 24 \times 365.25$ & dex\_pool\_hourly \\
+\texttt{vol\_over\_tvl} & $\text{volume\_usd}/\text{tvl\_usd}$ & dex\_pool\_hourly \\
+\texttt{realized\_vol\_24h\_ann} & $\mathrm{std}(r_{1h}) \times \sqrt{8760}$ (rolling 24h) & cex\_price\_hourly \\
+\texttt{dex\_cex\_basis\_bps} & $(p^{\mathrm{DEX}}-p^{\mathrm{CEX}})/p^{\mathrm{CEX}} \times 10000$ & merged\_hourly \\
+\texttt{arbitrage\_flag} & $|\text{basis\_bps}|>5$ & merged\_hourly \\
+\texttt{lvr\_rate\_ann} & $\sigma^2_{\mathrm{ann}}/8$ & dex\_lvr\_hourly \\
+\texttt{lvr\_usd\_tvl\_approx} & $(\mathrm{TVL}/8)\sigma^2 \,\mathrm{d}t$ & dex\_lvr\_hourly \\
+\texttt{net\_pnl\_usd} & burns + collects $-$ mints & dex\_lp\_positions \\
+\texttt{fee\_income\_usd} & collects $-$ burns & dex\_lp\_positions \\
+\texttt{range\_width\_pct} & $(1.0001^{\Delta\text{tick}}-1)\times 100$ & dex\_lp\_positions \\
+\end{longtable}
+
+\subsection{Calibration Parameters Extracted}
+
+\begin{table}[H]
+\centering
+\small
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{lll}
+\toprule
+\textbf{Section} & \textbf{Parameters} & \textbf{Source} \\
+\midrule
+Price dynamics    & $\mu_{\mathrm{daily}}$, $\sigma_{\mathrm{daily}}$, $\sigma_{\mathrm{hourly}}$, vol mean & cex\_price\_hourly \\
+Stress regime     & 90th pct vol threshold, stress fraction & cex\_price\_hourly \\
+Pool state        & Median/mean TVL, median liquidity, vol/TVL mean, fee APR mean & dex\_pool\_hourly \\
+Trade arrival     & $\lambda_{\mathrm{hour}}$, $\lambda_{\mathrm{day}}$ (from tx count) & dex\_pool\_hourly \\
+Trade size        & $\mu_q$, $\sigma_q$ (lognormal), mean, median, p25/p75/p95/p99 & dex\_swaps \\
+Gas dynamics      & Mean/std gas in Gwei, AR(1) $\rho$ and $\sigma_\varepsilon$, mean gas cost USD & dex\_swaps \\
+LVR               & Mean/median annualized rate, mean hourly USD, LVR/fee ratio & dex\_lvr\_hourly \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\caption{Calibration parameters by section in \texttt{calibration\_params.json}.}
+\end{table}
+
+% ============================================================
+\section{Data Integrity Check}
+
+\subsection{Purpose}
+
+The script \texttt{scripts/check\_data\_integrity.py} verifies that all raw import files are present, complete, and internally consistent. Run it after all import scripts finish and before running the processing pipeline.
+
+\begin{lstlisting}
+python scripts/check_data_integrity.py
+\end{lstlisting}
+
+Exits with code 0 if all critical checks pass; exits with code 1 if any \texttt{[FAIL]} is raised. Returns \texttt{[WARN]} for non-critical issues (missing optional files, partially complete imports).
+
+\subsection{Checks Performed}
+
+\begin{longtable}{L{4.0cm}L{10.4cm}}
+\caption{Checks performed by \texttt{check\_data\_integrity.py}.}\\
+\toprule
+\textbf{Category} & \textbf{What is checked} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Category} & \textbf{What is checked} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+CEX manifest & Manifest exists. Counts by status. Any \texttt{failed} entries (not \texttt{missing\_404}) are flagged as \texttt{[FAIL]}. \\
+CEX klines coverage & For each symbol/interval, compares months present on disk against expected range. Missing months are \texttt{[WARN]}. \\
+CEX klines row count & Spot-checks the newest monthly file. Flags files with fewer than 20,000 rows (1m) or 4,000 rows (5m) as \texttt{[WARN]}. \\
+CEX aggTrades coverage & Checks month coverage per symbol. Flagged as \texttt{[WARN]} if optional. \\
+DEX pool hourly & File exists, row count, required columns (tvl\_usd, volume\_usd, fees\_usd, liquidity, tick), null rate in TVL. \\
+DEX monthly events & For swaps, mints, burns, collects: which months are present vs.\ expected. Newest file readability and row count. Required columns checked. \\
+DEX static files & positions\_current.csv, pool\_metadata\_current.csv, bundle\_current.csv: existence and row count. \\
+Price sanity & ETH/USDC price range from pool\_hour\_data.csv flagged if outside \$50--\$20,000. \\
+\end{longtable}
+
+\subsection{Output Format}
+
+\begin{lstlisting}
+============================================================
+Data Integrity Check
+============================================================
+
+[CEX] Download manifest
+  [OK]   Manifest: 398 entries  |  statuses: {downloaded_extracted: 373, missing_404: 25}
+  [OK]   No failed downloads
+
+[CEX] Klines coverage and row counts
+  [OK]   ETHUSDT/1m: 52/52 months  (2022-01 -> 2026-04)
+  [WARN] ETHUSDC/1m: 5 months missing: 2022-10, 2022-11, ...
+
+[DEX] Pool time series
+  [OK]   pool_hour_data.csv: 43,752 rows
+
+...
+
+============================================================
+FAILURES (0):
+WARNINGS (3):
+  [WARN] ...
+============================================================
+\end{lstlisting}
+
+% ============================================================
+\section{Limitations}
+
+\begin{enumerate}
+    \item Historical full order-book depth is not available for the sample period. The order-book collector records data prospectively only.
+    \item The module imports Binance data only. Other CEX venues are not covered.
+    \item Aggregate trades are not the raw matching-engine feed; multiple fills on the same taker order at the same price and time are compressed into one row.
+    \item ETHUSDC was listed on Binance in August 2022; earlier months use the synthetic ETHUSDT/USDCUSDT proxy.
+    \item The processing pipeline does not classify individual swaps as arbitrage, market-making, or uninformed flow. This is left for the analysis stage.
+    \item LVR estimates use the TVL approximation $\mathrm{dLVR} \approx (\mathrm{TVL}/8)\sigma^2\,\mathrm{d}t$, which assumes a balanced pool ($x_t p_t \approx \mathrm{TVL}/2$). The v3 active-liquidity formula is also provided for comparison.
+    \item \texttt{positions\_current.csv} reflects the current state of positions, not their historical evolution. Position P\&L is estimated from aggregated mint/burn/collect cash flows.
+\end{enumerate}
+
+% ============================================================
+\section{Pre-Run Checklist}
+
+\begin{enumerate}
+    \item Python 3.13+ is installed. Verify: \texttt{python --version}.
+    \item Required packages are installed: \texttt{pip install requests pandas numpy}.
+    \item \texttt{THEGRAPH\_API\_KEY} is set (either in \texttt{.env} at project root or via \texttt{setx}).
+    \item A new terminal has been opened after \texttt{setx} (environment variables require a new shell).
+    \item There is sufficient disk space (DEX monthly files: $\sim$5--20 GB total; CEX klines: $\sim$10 GB).
+    \item The working directory is the project root when running any script.
+\end{enumerate}
+
+\end{document}
