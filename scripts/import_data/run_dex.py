@@ -22,9 +22,24 @@ Output:
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+# Load .env from project root if THEGRAPH_API_KEY is not already set
+def _load_env() -> None:
+    if os.environ.get("THEGRAPH_API_KEY"):
+        return
+    env_file = Path(__file__).resolve().parents[2] / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
+
+_load_env()
 
 SCRIPT_DIR = Path(__file__).parent / "DEX"
 
