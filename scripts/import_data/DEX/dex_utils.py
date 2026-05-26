@@ -32,8 +32,8 @@ END_TS   = 1777593599   # 2026-04-30 23:59:59 UTC
 
 BATCH       = 1000   # rows per query (The Graph maximum)
 SLEEP       = 0.35   # seconds between queries
-MAX_RETRIES = 5
-RETRY_WAIT  = 10     # seconds before each retry
+MAX_RETRIES = 10
+RETRY_WAIT  = 15     # base wait (seconds); doubles each attempt (exponential backoff)
 
 # ── API setup ─────────────────────────────────────────────────────────────────
 
@@ -69,8 +69,9 @@ def run_query(query: str, variables: Optional[dict] = None) -> dict:
         except Exception as exc:
             if attempt == MAX_RETRIES:
                 raise
-            print(f"[Retry {attempt}/{MAX_RETRIES}] {exc}. Waiting {RETRY_WAIT}s...")
-            time.sleep(RETRY_WAIT)
+            wait = min(RETRY_WAIT * (2 ** (attempt - 1)), 120)
+            print(f"[Retry {attempt}/{MAX_RETRIES}] {exc}. Waiting {wait}s...")
+            time.sleep(wait)
     raise RuntimeError("run_query exhausted retries without raising")  # unreachable
 
 # ── Type-safe coercions ───────────────────────────────────────────────────────
