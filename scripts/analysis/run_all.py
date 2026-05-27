@@ -36,13 +36,19 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parent
 
 PIPELINE: list[tuple[str, str]] = [
-    ("descriptive_stats.py",    "1/7  Descriptive statistics"),
-    ("price_dynamics.py",       "2/7  Price dynamics (GBM, GARCH, HAR-RV, tail risk)"),
-    ("dex_cex_basis.py",        "3/7  DEX-CEX basis (arbitrage, VECM, determinants)"),
-    ("lvr_analysis.py",         "4/7  LVR analysis (theory test, rolling, GARCH)"),
-    ("trade_microstructure.py", "5/7  Trade microstructure (size, gas, price impact, Amihud)"),
-    ("volatility_regimes.py",   "6/7  Volatility regimes (transitions, forecast accuracy)"),
-    ("lp_profitability.py",     "7/7  LP profitability (P&L by type, range, regime)"),
+    ("descriptive_stats.py",         " 1/12  Descriptive statistics"),
+    ("price_dynamics.py",            " 2/12  Price dynamics (GBM, GARCH, HAR-RV, tail risk)"),
+    ("dex_cex_basis.py",             " 3/12  DEX-CEX basis (arbitrage, VECM, determinants)"),
+    ("lvr_analysis.py",              " 4/12  LVR analysis (theory test, rolling, GARCH)"),
+    ("trade_microstructure.py",      " 5/12  Trade microstructure (size, gas, price impact, Amihud)"),
+    ("volatility_regimes.py",        " 6/12  Volatility regimes (transitions, forecast accuracy)"),
+    ("lp_profitability.py",          " 7/12  LP profitability (P&L by type, range, regime)"),
+    # ── Five new research-question scripts ────────────────────────────────────
+    ("price_discovery.py",           " 8/12  Price discovery (Hasbrouck IS, Gonzalo-Granger CS)"),
+    ("jump_risk_decomposition.py",   " 9/12  Jump risk decomposition & LVR attribution"),
+    ("lp_adverse_selection.py",      "10/12  LP adverse selection (event study, Fama-MacBeth)"),
+    ("order_flow_toxicity.py",       "11/12  Order flow toxicity (VPIN, Granger, LP welfare)"),
+    ("liquidity_depth_dynamics.py",  "12/12  Liquidity depth dynamics (VAR, IRF, FEVD)"),
 ]
 
 
