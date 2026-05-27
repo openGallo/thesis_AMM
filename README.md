@@ -1,8 +1,22 @@
-# thesis_AMM
+# thesis_AMM — Public Repository
 
-Master thesis — **Liquidity Provision and Loss-Versus-Rebalancing in Uniswap v3**
+Master thesis — **Loss-Versus-Rebalancing and Liquidity Provision in Uniswap v3: A Regression Discontinuity Approach to the Volatility Break-Even Threshold**
 
-Empirical study of the USDC/WETH 0.05% pool (`0x88e6A0c2ddd26FEEb64F039a2c41296FcB3f5640`) over the period 2021–2026, combining on-chain DEX data with CEX reference prices from Binance. The analysis covers LP economics, DEX-CEX price dynamics, LVR estimation, and simulation calibration.
+**Author:** Arthur Gallo | Master of Science in Quantitative Finance | Academic Year 2024–2025
+
+Empirical study of the USDC/WETH 0.05% pool (`0x88e6A0c2ddd26FEEb64F039a2c41296FcB3f5640`) over May 2021–December 2024.
+
+> **Note:** Analysis scripts, thesis LaTeX source, and figures live in a **private companion repository** (`thesis-AMM-private`). This public repo contains only the data-import and processing pipeline.
+
+### Key Results
+
+| Quantity | Value |
+|---|---|
+| Break-even volatility σ\* | 63.4% (annualised) |
+| Reduced-form jump (Δlog TVL +24h) | −0.00312 (SE = 0.00089, *p* < 0.001) |
+| LATE (fuzzy RD / Wald) | −0.0167 (SE = 0.0051) |
+| McCrary density test | *p* = 0.44 (no manipulation) |
+| Sample | 31,258 hourly observations |
 
 ---
 
