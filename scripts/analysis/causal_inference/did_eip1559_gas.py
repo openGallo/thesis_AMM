@@ -92,6 +92,10 @@ References:
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -259,6 +263,20 @@ def lp_cohort_did(lp: pd.DataFrame) -> pd.DataFrame:
     closed["log_mint"]     = np.log(closed["total_minted_usd"].clip(lower=1))
     closed["log_rng"]      = np.log(closed["range_width_pct"].clip(lower=0.01))
 
+    # Add ETH price at mint as control for the Aug-Nov 2021 bull market confounder.
+    # Without this, post_eip coefficient conflates EIP-1559 effect with rising ETH price
+    # attracting more/different LP activity (higher ETH → larger positions, longer holds).
+    mh = load("merged/merged_hourly.csv")
+    if mh is not None and "dex_eth_usdc_price" in mh.columns:
+        eth_daily = mh["dex_eth_usdc_price"].resample("D").mean()
+        closed["eth_at_mint"] = closed["first_mint_utc"].dt.normalize().map(
+            lambda d: float(eth_daily.get(d, np.nan))
+        )
+        closed["log_eth"] = np.log(closed["eth_at_mint"].clip(lower=1))
+        ctrl_cols = ["post_eip", "log_eth"]
+    else:
+        ctrl_cols = ["post_eip"]
+
     results = []
     for dep, dep_label in [
         ("log_duration", "log(duration_days)"),
@@ -266,7 +284,8 @@ def lp_cohort_did(lp: pd.DataFrame) -> pd.DataFrame:
         ("log_mint",     "log(total_minted_usd)"),
     ]:
         y = closed[dep]
-        X = sm.add_constant(closed[["post_eip"]].astype(float))
+        reg_cols = [c for c in ctrl_cols if c in closed.columns]
+        X = sm.add_constant(closed[reg_cols].astype(float))
         try:
             res = sm.OLS(y, X).fit().get_robustcov_results(cov_type="HC3")
             for var, c, s, t, p in zip(res.model.exog_names, res.params,

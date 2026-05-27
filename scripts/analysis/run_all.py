@@ -1,8 +1,8 @@
 """
-Run all analysis scripts in order.
+Run all core empirical analysis scripts in order.
 
 Usage:
-    python scripts/analysis/run_all.py           # all scripts
+    python scripts/analysis/run_all.py           # all 12 core scripts
     python scripts/analysis/run_all.py fast       # sets FAST_MODE=1 env-var (reserved for future use)
 
 Note: FAST_MODE is forwarded to every sub-script as an environment variable.
@@ -15,6 +15,9 @@ Outputs land in:
     output/tables/*.csv   and  output/tables/*.tex
 
 Requires processed data in data_processed/ (run scripts/process_data/run_all.py first).
+
+Causal inference scripts (DiD / RD) are maintained separately:
+    scripts/analysis/causal_inference/run_causal.py   ← run those 10 scripts here
 
 Script execution order and dependencies:
     ── Core empirical analysis (scripts 1-7) ──────────────────────────────────
@@ -31,12 +34,6 @@ Script execution order and dependencies:
    10. lp_adverse_selection      - event study, Fama-MacBeth cross-section
    11. order_flow_toxicity       - VPIN, Granger causality, LP welfare
    12. liquidity_depth_dynamics  - VAR, IRF, FEVD
-    ── Causal inference (scripts 13-17) ────────────────────────────────────────
-   13. did_merge_impact          - ITS: Ethereum Merge (Sep 15 2022)
-   14. did_ftx_lp_withdrawal     - DiD: FTX collapse (Nov 8 2022), LP exit
-   15. rd_arbitrage_trigger      - Sharp RD: gas-adjusted arb break-even
-   16. rd_tick_crossing          - Fuzzy RD: tick boundary liquidity effects
-   17. did_eip1559_gas           - DiD/ITS: EIP-1559 (Aug 5 2021), LP economics
 """
 
 from __future__ import annotations
@@ -50,25 +47,20 @@ SCRIPT_DIR = Path(__file__).parent
 
 PIPELINE: list[tuple[str, str]] = [
     # ── Core empirical analysis ────────────────────────────────────────────────
-    ("descriptive_stats.py",         " 1/17  Descriptive statistics"),
-    ("price_dynamics.py",            " 2/17  Price dynamics (GBM, GARCH, HAR-RV, tail risk)"),
-    ("dex_cex_basis.py",             " 3/17  DEX-CEX basis (arbitrage, VECM, determinants)"),
-    ("lvr_analysis.py",              " 4/17  LVR analysis (theory test, rolling, GARCH)"),
-    ("trade_microstructure.py",      " 5/17  Trade microstructure (size, gas, price impact, Amihud)"),
-    ("volatility_regimes.py",        " 6/17  Volatility regimes (transitions, forecast accuracy)"),
-    ("lp_profitability.py",          " 7/17  LP profitability (P&L by type, range, regime)"),
+    ("descriptive_stats.py",         " 1/12  Descriptive statistics"),
+    ("price_dynamics.py",            " 2/12  Price dynamics (GBM, GARCH, HAR-RV, tail risk)"),
+    ("dex_cex_basis.py",             " 3/12  DEX-CEX basis (arbitrage, VECM, determinants)"),
+    ("lvr_analysis.py",              " 4/12  LVR analysis (theory test, rolling, GARCH)"),
+    ("trade_microstructure.py",      " 5/12  Trade microstructure (size, gas, price impact, Amihud)"),
+    ("volatility_regimes.py",        " 6/12  Volatility regimes (transitions, forecast accuracy)"),
+    ("lp_profitability.py",          " 7/12  LP profitability (P&L by type, range, regime)"),
     # ── Novel research questions ───────────────────────────────────────────────
-    ("price_discovery.py",           " 8/17  Price discovery (Hasbrouck IS, Gonzalo-Granger CS)"),
-    ("jump_risk_decomposition.py",   " 9/17  Jump risk decomposition & LVR attribution"),
-    ("lp_adverse_selection.py",      "10/17  LP adverse selection (event study, Fama-MacBeth)"),
-    ("order_flow_toxicity.py",       "11/17  Order flow toxicity (VPIN, Granger, LP welfare)"),
-    ("liquidity_depth_dynamics.py",  "12/17  Liquidity depth dynamics (VAR, IRF, FEVD)"),
-    # ── Causal inference ──────────────────────────────────────────────────────
-    ("did_merge_impact.py",          "13/17  DiD/ITS: Ethereum Merge (Sep 15 2022)"),
-    ("did_ftx_lp_withdrawal.py",     "14/17  DiD: FTX collapse — LP exit behaviour"),
-    ("rd_arbitrage_trigger.py",      "15/17  Sharp RD: gas-adjusted arb break-even"),
-    ("rd_tick_crossing.py",          "16/17  Fuzzy RD: tick crossing liquidity effects"),
-    ("did_eip1559_gas.py",           "17/17  DiD/ITS: EIP-1559 — gas cost and LP economics"),
+    ("price_discovery.py",           " 8/12  Price discovery (Hasbrouck IS, Gonzalo-Granger CS)"),
+    ("jump_risk_decomposition.py",   " 9/12  Jump risk decomposition & LVR attribution"),
+    ("lp_adverse_selection.py",      "10/12  LP adverse selection (event study, Fama-MacBeth)"),
+    ("order_flow_toxicity.py",       "11/12  Order flow toxicity (VPIN, Granger, LP welfare)"),
+    ("liquidity_depth_dynamics.py",  "12/12  Liquidity depth dynamics (VAR, IRF, FEVD)"),
+    # Causal inference (DiD / RD) → scripts/analysis/causal_inference/run_causal.py
 ]
 
 
@@ -101,7 +93,7 @@ def main() -> None:
     if fast_mode:
         print("[FAST MODE] FAST_MODE=1 forwarded to sub-scripts.")
         print("  NOTE: No script currently skips GARCH/bootstraps based on this flag.")
-        print("  All 17 analysis scripts will run their full pipeline.")
+        print("  All 12 core analysis scripts will run their full pipeline.")
 
     env_extra = {"FAST_MODE": "1"} if fast_mode else None
 

@@ -76,6 +76,10 @@ References:
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -89,7 +93,7 @@ from scipy import stats as sp_stats
 
 from analysis_utils import (
     load, savefig, savetable, stars,
-    ols_hac, block_bootstrap_ci,
+    ols_hac, block_bootstrap_ci, bh_correction,
 )
 
 # ── Event constants ───────────────────────────────────────────────────────────
@@ -377,7 +381,17 @@ def main() -> None:
 
     if its_rows:
         df_its = pd.DataFrame(its_rows).set_index(["outcome", "spec"])
+        # BH correction across outcomes to control FWER (5 outcomes tested jointly)
+        main_rows = [r for r in its_rows if r.get("spec") == "main"]
+        post_pvals = [r.get("Post_pval", np.nan) for r in main_rows]
+        post_pvals_clean = [p for p in post_pvals if not np.isnan(p)]
+        if post_pvals_clean:
+            bh_flags = bh_correction(post_pvals_clean, alpha=0.10)
+            for r, flag in zip([r for r in main_rows if not np.isnan(r.get("Post_pval", np.nan))], bh_flags):
+                r["Post_BH10_reject"] = flag
         savetable(df_its, "did_merge_its")
+        print(f"  BH(10%) rejects among main-spec Post coefficients: "
+              f"{sum(bh_flags)}/{len(bh_flags)}" if post_pvals_clean else "")
 
     # 2. Chow test
     chow_rows = []

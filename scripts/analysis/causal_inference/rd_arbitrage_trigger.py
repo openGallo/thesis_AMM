@@ -94,6 +94,10 @@ References:
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -361,7 +365,7 @@ def main() -> None:
     h_ik = ik_bandwidth(y, r, c_star)
     print(f"  IK bandwidth: {h_ik:.2f} bps")
 
-    # ── 4. LLR — main + bandwidth robustness + polynomial
+    # ── 4. LLR — main + bandwidth robustness + polynomial + donut RD
     rd_rows = []
     for spec, bw, poly in [
         ("main_p1",        h_ik,         1),
@@ -375,6 +379,26 @@ def main() -> None:
         res["spec"] = spec
         res["cutoff_used"] = cutoff
         rd_rows.append(res)
+
+    # Donut RD: exclude ±donut_bps around cutoff (robustness to exact-cutoff sorting)
+    # Calonico et al. (2019) recommend donut RD when density is not smooth at cutoff.
+    # For our design, arbitrageurs who know the exact gas cost may position observations
+    # just above c* — the donut removes these and checks if the jump persists.
+    donut_bps = max(1.0, c_star * 0.05)  # ±5% of the cutoff, minimum 1 bps
+    r_donut  = r[np.abs(r - c_star) > donut_bps]
+    y_donut  = y[np.abs(r - c_star) > donut_bps]
+    if len(r_donut) > MIN_OBS_SIDE * 2:
+        res_donut = local_linear_rd(y_donut, r_donut, cutoff=c_star,
+                                    bw=h_ik, poly_order=1)
+        res_donut["spec"] = f"donut_{donut_bps:.1f}bps"
+        res_donut["cutoff_used"] = c_star
+        res_donut["NOTE"] = (
+            f"Donut RD: excludes ±{donut_bps:.1f} bps around c*={c_star:.1f} bps. "
+            "Removes observations most likely to exhibit strategic sorting at the cutoff. "
+            "If jump persists in donut, the discontinuity is not driven by manipulation "
+            "at the exact threshold. Ref: Calonico et al. (2019); Barreca et al. (2016)."
+        )
+        rd_rows.append(res_donut)
 
     # p50 cutoff sensitivity
     res_p50 = local_linear_rd(y, r, cutoff=c_sens[1], bw=h_ik, poly_order=1)

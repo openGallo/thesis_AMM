@@ -85,6 +85,10 @@ References:
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -209,7 +213,15 @@ def did_regression(panel: pd.DataFrame) -> pd.DataFrame:
         result["NOTE"] = (
             "DiD: δ = coef(narrow_x_post). H1: δ>0 → narrow LPs exit faster "
             "post-FTX. Includes group-specific linear time trend (narrow×day_rel). "
-            "HAC SE, 7-lag. N = group × day observations."
+            "HAC SE, 7-lag (Newey-West). Limitation: correct SE requires clustering "
+            "at the group×week level (Bertrand et al. 2004); with only 2 groups, "
+            "cluster-robust SE degenerates — Cameron et al. (2008) wild bootstrap "
+            "recommended for inference with few clusters. HAC is conservative for "
+            "the time-series dimension but does not account for within-day cross-"
+            "group correlation. Callaway & Sant'Anna (2021) note: if position cohorts "
+            "are treated at different dates (e.g., positions minted 1 day before FTX "
+            "vs 1 month before), staggered-DiD heterogeneity is not addressed here. "
+            "Estimand = ATT (average treatment effect on the treated = narrow LPs)."
         )
     return result
 

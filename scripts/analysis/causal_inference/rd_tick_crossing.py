@@ -97,6 +97,10 @@ References:
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -143,7 +147,18 @@ def load_panel() -> pd.DataFrame | None:
     # Running variable and treatment
     panel["abs_return"] = panel["dex_log_return"].abs()
     panel["delta_tick"] = panel["tick"].diff().abs()
-    panel["tick_cross"] = (panel["delta_tick"] >= TICK_SPACING).astype(float)
+
+    # Verify tick spacing from data: the minimum non-zero delta_tick should equal TICK_SPACING.
+    # Uniswap v3 tick spacing for 0.05% fee tier = 10; all tick changes are multiples of 10.
+    # If the empirical minimum differs, update TICK_SPACING accordingly.
+    min_nonzero_dt = panel["delta_tick"][panel["delta_tick"] > 0].min()
+    empirical_ts = int(min_nonzero_dt) if not np.isnan(min_nonzero_dt) else TICK_SPACING
+    if empirical_ts != TICK_SPACING:
+        print(f"  [WARN] Empirical min tick change = {empirical_ts} ≠ "
+              f"theoretical TICK_SPACING={TICK_SPACING}. "
+              f"Using empirical value {empirical_ts} for tick_cross classification.")
+    effective_ts = empirical_ts
+    panel["tick_cross"] = (panel["delta_tick"] >= effective_ts).astype(float)
 
     # Outcomes (next-hour)
     panel["abs_basis_next"] = panel["dex_cex_basis_bps"].abs().shift(-1)
