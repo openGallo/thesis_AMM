@@ -1,21 +1,18 @@
-# Core data
-numpy>=1.24
-pandas>=2.0
-pyarrow>=14.0
+# thesis_AMM — public repo dependencies
+# Data import and processing pipeline only
+# (analysis scripts live in the private companion repo)
 
-# Statistics & econometrics
-scipy>=1.11
-statsmodels>=0.14
-arch>=6.0
+# Core data processing
+numpy>=2.1
+pandas>=2.2
+pyarrow>=17.0        # parquet I/O for processed datasets
 
-# Visualisation
-matplotlib>=3.7
-
-# Blockchain / data ingestion
+# HTTP / API
 requests>=2.31
+
+# Environment variables (THEGRAPH_API_KEY loading)
 python-dotenv>=1.0
 
-# RL (optional — only needed for rl_lp_agent.py)
-gymnasium>=0.29
-stable-baselines3>=2.2
-torch>=2.1
+# Optionally used by process_data scripts
+scipy>=1.14
+statsmodels>=0.14

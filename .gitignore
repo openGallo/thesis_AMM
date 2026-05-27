@@ -84,6 +84,7 @@ desktop.ini
 scripts/analysis/
 scripts/process_data/
 generate_thesis.py
+scripts/rl_lp_agent.py
 
 # ============================================================
 # Thesis PDF and LaTeX outputs
