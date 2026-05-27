@@ -194,8 +194,7 @@ def build_daily(hour_df: pd.DataFrame) -> pd.DataFrame:
 
     day_grp = h.groupby(h.index.floor("D"))
 
-    day_ohlc  = day_grp["close"].agg(open="first", high="max", low="min", close="last")
-    # Rename the 'close' from price series if it was grouped on 'close'
+    # Aggregate OHLC properly from hourly OHLC columns (first open / max high / min low / last close).
     day_ohlc2 = day_grp.agg(
         open        = ("open",        "first"),
         high        = ("high",        "max"),

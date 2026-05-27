@@ -3,7 +3,12 @@ Run all analysis scripts in order.
 
 Usage:
     python scripts/analysis/run_all.py           # all scripts
-    python scripts/analysis/run_all.py fast       # skip GARCH + bootstraps (faster)
+    python scripts/analysis/run_all.py fast       # sets FAST_MODE=1 env-var (reserved for future use)
+
+Note: FAST_MODE is forwarded to every sub-script as an environment variable.
+Individual scripts may check os.environ.get("FAST_MODE") to skip heavy
+computations (GARCH fitting, bootstrap CIs). Currently none do — all scripts
+run their full pipeline regardless. This flag is reserved for future implementation.
 
 Outputs land in:
     output/figures/*.pdf  (+ .png previews)
@@ -68,12 +73,16 @@ def run(script: str, label: str, env_extra: dict | None = None) -> tuple[int, fl
 def main() -> None:
     fast_mode = len(sys.argv) > 1 and sys.argv[1].lower() == "fast"
     if fast_mode:
-        print("[FAST MODE] Skipping GARCH fitting and heavy bootstraps")
+        print("[FAST MODE] FAST_MODE=1 forwarded to sub-scripts.")
+        print("  NOTE: No script currently skips GARCH/bootstraps based on this flag.")
+        print("  All 7 analysis scripts will run their full pipeline.")
+
+    env_extra = {"FAST_MODE": "1"} if fast_mode else None
 
     t_start = time.time()
     results = []
     for script, label in PIPELINE:
-        rc, elapsed = run(script, label)
+        rc, elapsed = run(script, label, env_extra=env_extra)
         results.append((script, rc, elapsed))
 
     total = time.time() - t_start

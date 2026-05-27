@@ -172,9 +172,12 @@ def load_data() -> pd.DataFrame:
     swaps_path = DATA_PROC / "DEX" / "dex_swaps.csv"
     if swaps_path.exists():
         try:
+            # Load ALL swaps for gas (only 2 columns → ~200 MB for 10.9M rows).
+            # Previously nrows=2_000_000 was used, which only covered the first
+            # ~11 months of data and left most of the panel at the 50 Gwei default.
             gas_raw = pd.read_csv(
                 swaps_path, usecols=["timestamp", "gas_price_wei"],
-                low_memory=False, nrows=2_000_000)
+                low_memory=False)
             gas_raw["timestamp"] = pd.to_datetime(
                 gas_raw["timestamp"], utc=True, errors="coerce")
             gas_raw["gas_gwei"] = (
