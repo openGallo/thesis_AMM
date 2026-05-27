@@ -378,7 +378,48 @@ def main() -> None:
     mc = mccrary_test(v, vol_star)
     savetable(pd.DataFrame([mc]), "rvlb_mccrary")
 
-    # 5. Plots
+    # 5. Vol-regime heterogeneity
+    # Repeat RD in terciles of vol (low / mid / high) to test whether the
+    # break-even response is stronger in particular vol regimes.
+    # Theory: in low-vol regimes, vol* is a more precise signal; high-vol
+    # periods may have fat tails that attenuate the discontinuity.
+    vol_p33 = float(np.percentile(v, 33))
+    vol_p67 = float(np.percentile(v, 67))
+    regime_rows = []
+    for regime_label, regime_mask in [
+        ("low_vol",  v < vol_p33),
+        ("mid_vol",  (v >= vol_p33) & (v < vol_p67)),
+        ("high_vol", v >= vol_p67),
+    ]:
+        for col, label in OUTCOMES.items():
+            if col not in clean.columns:
+                continue
+            v_reg = v[regime_mask]
+            y_reg = clean[col].values[regime_mask]
+            # Need enough obs on each side of cutoff
+            if (regime_mask.sum() < MIN_OBS * 2 or
+                    (v_reg < vol_star).sum() < MIN_OBS or
+                    (v_reg >= vol_star).sum() < MIN_OBS):
+                continue
+            rf_r = llr(y_reg, v_reg, cutoff=vol_star, bw=bw, poly=1,
+                       label=f"{col}_{regime_label}")
+            rf_r["outcome"]  = col
+            rf_r["regime"]   = regime_label
+            rf_r["vol_range"] = (
+                f"[0, {vol_p33:.3f})" if regime_label == "low_vol"
+                else f"[{vol_p33:.3f}, {vol_p67:.3f})" if regime_label == "mid_vol"
+                else f"[{vol_p67:.3f}, ∞)"
+            )
+            rf_r["n_regime"] = int(regime_mask.sum())
+            regime_rows.append(rf_r)
+    if regime_rows:
+        df_reg = pd.DataFrame(regime_rows).set_index(["outcome", "regime"])
+        savetable(df_reg, "rvlb_regime_het")
+        print(f"  Vol-regime heterogeneity: {len(regime_rows)} regime×outcome RD estimates saved")
+    else:
+        print("  [WARN] Insufficient obs in vol terciles to estimate regime-specific RD")
+
+    # 6. Plots
     plot_first_stage(panel, vol_star, bw)
     plot_rd(panel, vol_star, bw)
 

@@ -203,6 +203,7 @@ def split_its(series: pd.Series, event: pd.Timestamp,
         if var in tbl.index:
             r = tbl.loc[var]
             out[f"{var}_coef"] = r.get("Coef", np.nan)
+            out[f"{var}_se"]   = r.get("SE (HAC)", np.nan)
             out[f"{var}_pval"] = r.get("p-val", np.nan)
             out[f"{var}_sig"]  = r.get("Sig", "")
     out["theory_pred"] = (
@@ -344,6 +345,17 @@ def main() -> None:
                 res["outcome"] = col; res["spec"] = spec
                 split_rows.append(res)
     if split_rows:
+        # BH correction on split_its Post coefficients (main spec only)
+        main_split = [r for r in split_rows if r.get("spec") == "main"]
+        pv_s = [r.get("Post_pval", np.nan) for r in main_split]
+        pv_sc = [p for p in pv_s if not np.isnan(p)]
+        if pv_sc:
+            bh_s = bh_correction(pv_sc, alpha=0.10)
+            for r, flag in zip(
+                [r for r in main_split if not np.isnan(r.get("Post_pval", np.nan))], bh_s
+            ):
+                r["Post_BH10_reject"] = flag
+            print(f"  BH(10%) rejects (split-ITS Post): {sum(bh_s)}/{len(bh_s)}")
         savetable(pd.DataFrame(split_rows).set_index(["outcome", "spec"]), "sha_its_split")
 
     # 2. Simple ITS + placebo

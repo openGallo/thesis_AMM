@@ -197,7 +197,9 @@ def multi_event_comparison(panel: pd.DataFrame) -> pd.DataFrame:
             diff     = b_tl - b_ftx
             se_diff  = np.sqrt(se_tl ** 2 + se_ftx ** 2)
             t_diff   = diff / se_diff if se_diff > 0 else np.nan
-            p_diff   = float(2 * sp_stats.t.sf(abs(t_diff), df=500))
+            # Use min(N_TL, N_FTX) - 4 as df (4 params per ITS, two independent samples)
+            df_approx = max(min(r_tl.get("N", 500), r_ftx.get("N", 500)) - 4, 1)
+            p_diff   = float(2 * sp_stats.t.sf(abs(t_diff), df=df_approx))
         else:
             diff = se_diff = t_diff = p_diff = np.nan
         rows.append({
@@ -215,6 +217,41 @@ def multi_event_comparison(panel: pd.DataFrame) -> pd.DataFrame:
             ),
         })
     return pd.DataFrame(rows).set_index("outcome") if rows else pd.DataFrame()
+
+
+# ── Pre-trend test ────────────────────────────────────────────────────────────
+
+def pre_trend_test(series: pd.Series, event: pd.Timestamp,
+                   label: str = "") -> dict | None:
+    """
+    Pre-period linear trend: H0 β₁=0 (flat pre-event trend).
+    Window: [event - WINDOW_DAYS, event - EXCL_DAYS].
+    Significant β₁ → outcome was already shifting before Terra/Luna.
+    """
+    start = event - pd.Timedelta(days=WINDOW_DAYS)
+    end   = event - pd.Timedelta(days=EXCL_DAYS)
+    sub   = series.loc[start:end].dropna()
+    if len(sub) < 30:
+        return None
+    t   = np.arange(len(sub), dtype=float)
+    X   = pd.DataFrame({"t": t}, index=sub.index)
+    tbl = ols_hac(sub.rename("y"), X, max_lags=168, label=label)
+    if tbl.empty or "t" not in tbl.index:
+        return None
+    r = tbl.loc["t"]
+    return {
+        "coef_t": r.get("Coef", np.nan),
+        "se_t":   r.get("SE (HAC)", np.nan),
+        "pval_t": r.get("p-val", np.nan),
+        "sig_t":  r.get("Sig", ""),
+        "N":      len(sub),
+        "NOTE": (
+            "Pre-period trend test (HAC 168-lag). H0: β₁=0 (flat pre-Terra trend). "
+            "Significant → the outcome was already trending before May 9 2022 — "
+            "possibly due to broader crypto bear market (LUNA had been declining since Apr). "
+            "Supplement with placebo at May 9 2021."
+        ),
+    }
 
 
 # ── LP DiD (mirrors did_ftx_lp_withdrawal.py) ────────────────────────────────
@@ -348,15 +385,37 @@ def main() -> None:
                 its_rows.append(res)
 
     if its_rows:
-        df_its = pd.DataFrame(its_rows).set_index(["outcome", "spec"])
-        savetable(df_its, "tl_its")
-        # BH correction on main Post coefficients
+        # BH correction — add flags before building DataFrame
         main_rows = [r for r in its_rows if r.get("spec") == "main"]
         pvals = [r.get("Post_pval", np.nan) for r in main_rows]
         pvals_clean = [p for p in pvals if not np.isnan(p)]
         if pvals_clean:
             bh_flags = bh_correction(pvals_clean, alpha=0.10)
+            for r, flag in zip(
+                [r for r in main_rows if not np.isnan(r.get("Post_pval", np.nan))], bh_flags
+            ):
+                r["Post_BH10_reject"] = flag
             print(f"  BH(10%) rejects (Post coef): {sum(bh_flags)}/{len(bh_flags)}")
+        df_its = pd.DataFrame(its_rows).set_index(["outcome", "spec"])
+        savetable(df_its, "tl_its")
+        # Save placebo separately
+        plac_r = [r for r in its_rows if r.get("spec") == "placebo"]
+        if plac_r:
+            savetable(pd.DataFrame(plac_r).set_index(["outcome", "spec"]), "tl_placebo")
+
+    # 1b. Pre-trend test
+    pt_rows = []
+    for col, label in OUTCOMES.items():
+        if col not in panel.columns:
+            continue
+        res = pre_trend_test(panel[col], TERRA_DATE, label=label)
+        if res:
+            res["outcome"] = col; res["label"] = label
+            pt_rows.append(res)
+    if pt_rows:
+        savetable(pd.DataFrame(pt_rows).set_index("outcome"), "tl_pretrend")
+        sig_pt = sum(1 for r in pt_rows if r.get("pval_t", 1.0) < 0.10)
+        print(f"  Pre-trend test: {sig_pt}/{len(pt_rows)} outcomes significant pre-trend (p<0.10)")
 
     # 2. Multi-event comparison
     df_me = multi_event_comparison(panel)

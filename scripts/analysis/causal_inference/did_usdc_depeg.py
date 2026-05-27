@@ -161,6 +161,7 @@ def its(series: pd.Series, event: pd.Timestamp,
         if var in tbl.index:
             r = tbl.loc[var]
             out[f"{var}_coef"] = r.get("Coef", np.nan)
+            out[f"{var}_se"]   = r.get("SE (HAC)", np.nan)
             out[f"{var}_pval"] = r.get("p-val", np.nan)
             out[f"{var}_sig"]  = r.get("Sig", "")
     return out
@@ -340,16 +341,24 @@ def main() -> None:
                 res["outcome"] = col; res["spec"] = spec
                 its_rows.append(res)
     if its_rows:
-        df_its = pd.DataFrame(its_rows).set_index(["outcome", "spec"])
-        savetable(df_its, "usdc_its")
-        # BH on non-contaminated main outcomes
+        # BH on non-contaminated main outcomes (add flags before building DataFrame)
         main_r = [r for r in its_rows if r.get("spec") == "main"
                   and "abs_basis" not in r.get("outcome", "")]
         pv = [r.get("Post_pval", np.nan) for r in main_r]
         pv_c = [p for p in pv if not np.isnan(p)]
         if pv_c:
             bh = bh_correction(pv_c, alpha=0.10)
+            for r, flag in zip(
+                [r for r in main_r if not np.isnan(r.get("Post_pval", np.nan))], bh
+            ):
+                r["Post_BH10_reject"] = flag
             print(f"  BH(10%) rejects (non-contaminated Post): {sum(bh)}/{len(bh)}")
+        # Save main ITS; save placebo separately
+        df_its = pd.DataFrame(its_rows).set_index(["outcome", "spec"])
+        savetable(df_its, "usdc_its")
+        plac_r = [r for r in its_rows if r.get("spec") == "placebo"]
+        if plac_r:
+            savetable(pd.DataFrame(plac_r).set_index(["outcome", "spec"]), "usdc_placebo")
 
     # 2. Depeg episode
     df_ep = depeg_episode_study(panel)

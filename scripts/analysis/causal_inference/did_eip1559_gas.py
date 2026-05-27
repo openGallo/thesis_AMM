@@ -108,7 +108,7 @@ import matplotlib.pyplot as plt
 from scipy import stats as sp_stats
 
 from analysis_utils import (
-    load, load_swaps, savefig, savetable, stars, ols_hac, bootstrap_ci,
+    load, load_swaps, savefig, savetable, stars, ols_hac, bootstrap_ci, bh_correction,
 )
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -415,7 +415,22 @@ def main() -> None:
                 res_pl["spec"] = "placebo_jun2021"
                 its_rows.append(res_pl)
         if its_rows:
+            # BH correction on main-spec ITS Post coefficients
+            main_its = [r for r in its_rows if r.get("spec") == "main"]
+            pv = [r.get("Post_pval", np.nan) for r in main_its]
+            pv_c = [p for p in pv if not np.isnan(p)]
+            if pv_c:
+                bh = bh_correction(pv_c, alpha=0.10)
+                for r, flag in zip(
+                    [r for r in main_its if not np.isnan(r.get("Post_pval", np.nan))], bh
+                ):
+                    r["Post_BH10_reject"] = flag
+                print(f"  BH(10%) rejects (EIP gas ITS Post): {sum(bh)}/{len(bh)}")
+            # Save main + combined table; save placebo separately
             savetable(pd.DataFrame(its_rows).set_index(["outcome", "spec"]), "eip_gas_its")
+            plac_rows = [r for r in its_rows if r.get("spec") != "main"]
+            if plac_rows:
+                savetable(pd.DataFrame(plac_rows).set_index(["outcome", "spec"]), "eip_placebo")
 
         # 2. Variance test
         df_var = variance_test(gas_daily)

@@ -144,12 +144,6 @@ def build_lp_rd_data() -> pd.DataFrame | None:
     lvr_h = lvr[["lvr_rate_ann", "lvr_to_fee_ratio"]].copy()
     pool_h = dex_h.join(lvr_h, how="left")
 
-    def _lookup_hourly(ts_series, pool_hourly):
-        """For each timestamp, find the nearest hourly value."""
-        ts_floored = ts_series.dt.floor("h")
-        return ts_floored.map(lambda t: pool_hourly.index.get_loc(t,
-            method="nearest") if t in pool_hourly.index or True else None)
-
     # Map LP mint time to pool-hourly index
     lp["mint_hour"] = lp["first_mint_utc"].dt.floor("h")
     fee_at_mint = pool_h.reindex(lp["mint_hour"].values)["fee_apr_ann"].values
@@ -346,11 +340,21 @@ def main() -> None:
     ]:
         fs = local_linear_rd(D, r, cutoff=cutoff, bw=bw*bw_m, poly=poly, label=spec)
         fs["spec"] = spec
+        t_fs = fs.get("t", np.nan)
+        fs["F_first_stage"] = round(float(t_fs**2), 2) if not np.isnan(t_fs) else np.nan
+        fs["weak_instrument"] = (fs["F_first_stage"] < 10) if not np.isnan(fs.get("F_first_stage", np.nan)) else True
         fs_rows.append(fs)
-    savetable(pd.DataFrame(fs_rows).set_index("spec"), "rdp_first_stage")
+    df_fs = pd.DataFrame(fs_rows).set_index("spec")
+    # Warn if main spec is weak
+    f_main = df_fs.loc["main", "F_first_stage"] if "main" in df_fs.index else np.nan
+    if not np.isnan(f_main):
+        flag = " [WEAK INSTRUMENT]" if f_main < 10 else ""
+        print(f"  First-stage F (main): {f_main:.1f}{flag}  (threshold: F≥10, Staiger & Stock 1997)")
+    savetable(df_fs, "rdp_first_stage")
 
     # 3. Reduced form (ROI) + Wald
     rf_rows, wald_rows, rob_rows = [], [], []
+    fs_main = local_linear_rd(D, r, cutoff=c_star, bw=bw, poly=1, label="fs")
     for spec, bw_m, poly, cutoff in [
         ("main",    1.0, 1, c_star),
         ("bw_half", 0.5, 1, c_star),
@@ -363,10 +367,24 @@ def main() -> None:
         rf["spec"] = spec
         if spec == "main":
             rf_rows.append(rf)
-            fs_main = local_linear_rd(D, r, cutoff=c_star, bw=bw, poly=1, label="fs")
             wald_rows.append(wald_late(rf, fs_main, "ROI"))
         else:
             rob_rows.append(rf)
+
+    # Donut RD: exclude ±10% of bandwidth around c* (robustness to cutoff misspecification)
+    donut_h = max(bw * 0.10, cutoff_info["c_p75"] - cutoff_info["c_p25"]) * 0.05
+    donut_h = max(donut_h, 1e-4)
+    mask_donut = np.abs(r - c_star) > donut_h
+    if mask_donut.sum() > MIN_OBS * 2:
+        rf_donut = local_linear_rd(y[mask_donut], r[mask_donut], c_star, bw, poly=1, label="donut")
+        rf_donut["spec"] = f"donut_{donut_h:.4f}"
+        rf_donut["NOTE_donut"] = (
+            f"Donut RD: excludes ±{donut_h:.4f} around c*={c_star:.4f}. "
+            "Tests whether jump is driven by LPs at the exact cutoff (strategic timing). "
+            "Ref: Calonico et al. (2019); Barreca et al. (2016)."
+        )
+        rob_rows.append(rf_donut)
+
     savetable(pd.DataFrame(rf_rows + rob_rows).set_index("spec"), "rdp_main")
     savetable(pd.DataFrame(wald_rows).set_index("outcome"), "rdp_robustness")
 

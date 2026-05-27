@@ -354,6 +354,40 @@ def plot_event_window(ew: pd.DataFrame, tag: str) -> None:
     savefig(f"did_{tag}_event_window")
 
 
+# ── Pre-trend test ────────────────────────────────────────────────────────────
+
+def _pre_trend_test(series: pd.Series, event: pd.Timestamp,
+                    label: str = "") -> dict | None:
+    """
+    Pre-period linear trend: H0 β₁=0 (flat pre-event trend).
+    Significant β₁ → outcome was trending before The Merge → weakens ITS.
+    Window: [event - WINDOW_DAYS, event - EXCL_DAYS].
+    """
+    start = event - pd.Timedelta(days=WINDOW_DAYS)
+    end   = event - pd.Timedelta(days=EXCL_DAYS)
+    sub   = series.loc[start:end].dropna()
+    if len(sub) < 30:
+        return None
+    t   = np.arange(len(sub), dtype=float)
+    X   = pd.DataFrame({"t": t}, index=sub.index)
+    tbl = ols_hac(sub.rename("y"), X, max_lags=168, label=label)
+    if tbl.empty or "t" not in tbl.index:
+        return None
+    r = tbl.loc["t"]
+    return {
+        "coef_t": r.get("Coef", np.nan),
+        "se_t":   r.get("SE (HAC)", np.nan),
+        "pval_t": r.get("p-val", np.nan),
+        "sig_t":  r.get("Sig", ""),
+        "N":      len(sub),
+        "NOTE": (
+            "Pre-period trend test (HAC 168-lag). H0: β₁=0 (flat pre-Merge trend). "
+            "Significant → outcome was already shifting before The Merge; parallel-trends "
+            "assumption is weakened. Complement with placebo test at Sep 15 2021."
+        ),
+    }
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -364,6 +398,20 @@ def main() -> None:
     print(f"  Panel: {panel.index[0]:%Y-%m-%d} → {panel.index[-1]:%Y-%m-%d}  "
           f"({len(panel):,} h)")
     print(f"  The Merge: {THE_MERGE}  |  Placebo: {PLACEBO_DATE.date()}")
+
+    # 0. Pre-trend test (ITS validity: flat pre-period trend → no anticipatory dynamics)
+    pt_rows = []
+    for col, label in OUTCOMES.items():
+        if col not in panel.columns:
+            continue
+        res = _pre_trend_test(panel[col], THE_MERGE, label=label)
+        if res:
+            res["outcome"] = col; res["label"] = label
+            pt_rows.append(res)
+    if pt_rows:
+        savetable(pd.DataFrame(pt_rows).set_index("outcome"), "did_merge_pretrend")
+        sig_pt = sum(1 for r in pt_rows if r.get("pval_t", 1.0) < 0.10)
+        print(f"  Pre-trend test: {sig_pt}/{len(pt_rows)} outcomes have significant pre-trend (p<0.10)")
 
     # 1. ITS — main and short-run robustness
     its_rows = []
@@ -380,18 +428,21 @@ def main() -> None:
                 its_rows.append(res)
 
     if its_rows:
-        df_its = pd.DataFrame(its_rows).set_index(["outcome", "spec"])
-        # BH correction across outcomes to control FWER (5 outcomes tested jointly)
+        # BH correction across outcomes — add flags to dicts BEFORE building DataFrame
         main_rows = [r for r in its_rows if r.get("spec") == "main"]
         post_pvals = [r.get("Post_pval", np.nan) for r in main_rows]
         post_pvals_clean = [p for p in post_pvals if not np.isnan(p)]
         if post_pvals_clean:
             bh_flags = bh_correction(post_pvals_clean, alpha=0.10)
-            for r, flag in zip([r for r in main_rows if not np.isnan(r.get("Post_pval", np.nan))], bh_flags):
+            for r, flag in zip(
+                [r for r in main_rows if not np.isnan(r.get("Post_pval", np.nan))], bh_flags
+            ):
                 r["Post_BH10_reject"] = flag
+            print(f"  BH(10%) rejects among main-spec Post coefficients: "
+                  f"{sum(bh_flags)}/{len(bh_flags)}")
+        # Build DataFrame AFTER flags are embedded in the dicts
+        df_its = pd.DataFrame(its_rows).set_index(["outcome", "spec"])
         savetable(df_its, "did_merge_its")
-        print(f"  BH(10%) rejects among main-spec Post coefficients: "
-              f"{sum(bh_flags)}/{len(bh_flags)}" if post_pvals_clean else "")
 
     # 2. Chow test
     chow_rows = []
