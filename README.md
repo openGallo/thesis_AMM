@@ -1,9 +1,5 @@
 # thesis_AMM — Public Repository
 
-Master thesis — **Loss-Versus-Rebalancing and Liquidity Provision in Uniswap v3: A Regression Discontinuity Approach to the Volatility Break-Even Threshold**
-
-**Author:** Arthur Gallo | Master of Science in Quantitative Finance | Academic Year 2024–2025
-
 Empirical study of the USDC/WETH 0.05% pool (`0x88e6A0c2ddd26FEEb64F039a2c41296FcB3f5640`) over May 2021–December 2024.
 
 > **Note:** Analysis scripts, thesis LaTeX source, and figures live in a **private companion repository** (`thesis-AMM-private`). This public repo contains only the data-import and processing pipeline.
