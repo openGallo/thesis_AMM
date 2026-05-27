@@ -77,3 +77,13 @@ desktop.ini
 # Claude Code session memory (not source code)
 # ============================================================
 .claude/
+
+# ============================================================
+# Causal inference scripts (private / work in progress)
+# ============================================================
+scripts/analysis/causal_inference/
+
+# ============================================================
+# Thesis PDF
+# ============================================================
+thesis_arthur_gallo.pdf
