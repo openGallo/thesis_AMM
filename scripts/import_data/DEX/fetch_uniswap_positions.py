@@ -55,7 +55,6 @@ query($pool: String!, $first: Int!, $lastId: String!) {
 
     collectedFeesToken0
     collectedFeesToken1
-    collectedFeesUSD
 
     feeGrowthInside0LastX128
     feeGrowthInside1LastX128
@@ -155,7 +154,7 @@ def flatten_positions(rows: list) -> pd.DataFrame:
             "withdrawn_token1":             safe_float(r.get("withdrawnToken1")),
             "collected_fees_token0":        safe_float(r.get("collectedFeesToken0")),
             "collected_fees_token1":        safe_float(r.get("collectedFeesToken1")),
-            "collected_fees_usd":           safe_float(r.get("collectedFeesUSD")),
+            "collected_fees_usd":           None,  # field not in this subgraph
             "fee_growth_inside0_last_x128": r.get("feeGrowthInside0LastX128"),
             "fee_growth_inside1_last_x128": r.get("feeGrowthInside1LastX128"),
             "tick_lower":                   safe_int(tick_lower.get("tickIdx")),

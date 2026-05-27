@@ -6,13 +6,13 @@ Inputs:
     data_raw/DEX/pool_day_data.csv
 
 Key variables derived:
-    eth_usdc_price  — token0_price (USDC per WETH; = ETH price in USDC)
-    eth_usdc_open/high/low/close  — OHLC renamed from subgraph OHLC fields
-    fee_rate        — fixed 0.0005 (the 5 bps pool tier)
-    fee_apr_ann     — annualized fee APR = (fees_usd / tvl_usd) * 24 * 365.25 (hourly)
+    eth_usdc_price  - token0_price (USDC per WETH; = ETH price in USDC)
+    eth_usdc_open/high/low/close  - OHLC renamed from subgraph OHLC fields
+    fee_rate        - fixed 0.0005 (the 5 bps pool tier)
+    fee_apr_ann     - annualized fee APR = (fees_usd / tvl_usd) * 24 * 365.25 (hourly)
                                           (fees_usd / tvl_usd) * 365.25      (daily)
-    vol_over_tvl    — volume_usd / tvl_usd  (hourly turnover ratio)
-    log_return_1h   — log(close_n / close_{n-1})
+    vol_over_tvl    - volume_usd / tvl_usd  (hourly turnover ratio)
+    log_return_1h   - log(close_n / close_{n-1})
 
 Outputs:
     data_processed/DEX/dex_pool_hourly.csv
@@ -90,21 +90,21 @@ def main() -> None:
     # ── Hourly ───────────────────────────────────────────────────────────────
     hour_path = DATA_RAW / "pool_hour_data.csv"
     if not hour_path.exists():
-        print(f"[WARN] {hour_path} missing — run fetch_uniswap_pool_timeseries.py first.")
+        print(f"[WARN] {hour_path} missing - run fetch_uniswap_pool_timeseries.py first.")
     else:
         df_hour = pd.read_csv(hour_path)
         df_hour = enrich_hourly(df_hour)
         out_h   = DATA_OUT / "dex_pool_hourly.csv"
         df_hour.to_csv(out_h)
         print(f"Saved {out_h}  ({len(df_hour):,} rows)")
-        print(f"  Period: {df_hour.index.min()} → {df_hour.index.max()}")
+        print(f"  Period: {df_hour.index.min()} -> {df_hour.index.max()}")
         print(f"  fee_apr_ann  mean: {df_hour['fee_apr_ann'].mean():.2%}")
         print(f"  vol_over_tvl mean: {df_hour['vol_over_tvl'].mean():.4f}")
 
     # ── Daily ────────────────────────────────────────────────────────────────
     day_path = DATA_RAW / "pool_day_data.csv"
     if not day_path.exists():
-        print(f"[WARN] {day_path} missing — run fetch_uniswap_pool_timeseries.py first.")
+        print(f"[WARN] {day_path} missing - run fetch_uniswap_pool_timeseries.py first.")
     else:
         df_day = pd.read_csv(day_path)
         df_day = enrich_daily(df_day)

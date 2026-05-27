@@ -3,19 +3,19 @@ Build an LP position P&L table from raw mints, burns, collects, and positions_cu
 
 Position key (pool-level): (owner, tick_lower, tick_upper)
 Note: if the owner is the NonfungiblePositionManager contract, all NFT-wrapped
-positions at the same range are merged — this is still valid for aggregate analysis.
+positions at the same range are merged - this is still valid for aggregate analysis.
 
 Cash-flow accounting:
-    total_minted_usd    — USDC value of liquidity deposited (cost)
-    total_burned_usd    — USDC value of tokens returned on burn (principal out)
-    total_collected_usd — USDC value of collect events (fees + returned principal)
-    net_pnl_usd         — total_burned_usd + total_collected_usd - total_minted_usd
-    fee_income_usd      — total_collected_usd - total_burned_usd (approximate fee income)
+    total_minted_usd    - USDC value of liquidity deposited (cost)
+    total_burned_usd    - USDC value of tokens returned on burn (principal out)
+    total_collected_usd - USDC value of collect events (fees + returned principal)
+    net_pnl_usd         - total_burned_usd + total_collected_usd - total_minted_usd
+    fee_income_usd      - total_collected_usd - total_burned_usd (approximate fee income)
 
 Range metrics:
-    range_width_ticks   — tick_upper - tick_lower
-    range_width_pct     — (1.0001^range_width_ticks - 1) * 100  (price range width)
-    position_type       — narrow (<5%) | medium (5-20%) | wide (>20%)
+    range_width_ticks   - tick_upper - tick_lower
+    range_width_pct     - (1.0001^range_width_ticks - 1) * 100  (price range width)
+    position_type       - narrow (<5%) | medium (5-20%) | wide (>20%)
 
 Inputs:
     data_raw/DEX/mints_YYYY_MM.csv      (all months)
@@ -134,15 +134,35 @@ def main() -> None:
         else:
             cf[col] = pd.to_numeric(cf[col], errors="coerce").fillna(0.0)
 
-    cf["net_pnl_usd"]    = cf["total_burned_usd"] + cf["total_collected_usd"] - cf["total_minted_usd"]
-    # Fees ≈ collected value minus the USD value of principal returned via burn
-    cf["fee_income_usd"] = cf["total_collected_usd"] - cf["total_burned_usd"]
+    cf["net_pnl_usd"] = cf["total_burned_usd"] + cf["total_collected_usd"] - cf["total_minted_usd"]
+
+    # fee_income_usd requires collect events.  In Uniswap v3 the `collect` call
+    # transfers both returned principal (from burn) and accumulated fees.  When
+    # the collects dataset is empty, total_collected_usd = 0 for every position
+    # and the naive formula (collected - burned) gives a large negative number,
+    # which is meaningless.  Set to NaN so downstream analysis is not misled.
+    has_collects = not collects.empty and "amount_usd" in collects.columns
+    if has_collects:
+        cf["fee_income_usd"] = cf["total_collected_usd"] - cf["total_burned_usd"]
+    else:
+        cf["fee_income_usd"] = np.nan
+        print("  [NOTE] No collect events — fee_income_usd set to NaN.")
+        print("         Run fetch_uniswap_position_snapshots.py for accurate fee data.")
 
     # ── Range metrics ─────────────────────────────────────────────────────────
     tl = pd.to_numeric(cf["tick_lower"], errors="coerce")
     tu = pd.to_numeric(cf["tick_upper"], errors="coerce")
     cf["range_width_ticks"] = (tu - tl).astype("Int64")
-    cf["range_width_pct"]   = (1.0001 ** (tu - tl) - 1) * 100
+
+    # Use log arithmetic to avoid float overflow for extreme tick ranges.
+    # 1.0001^1_774_544 (full Uniswap range) overflows to inf; log avoids this.
+    # Cap at 500 % which corresponds to a 6× price ratio (upper/lower = 6).
+    tick_diff  = (tu - tl).clip(lower=0)
+    log_width  = tick_diff * np.log(1.0001)          # = log(1.0001^tick_diff)
+    cf["range_width_pct"] = (
+        np.expm1(log_width.clip(upper=np.log(6.0))) * 100
+    ).clip(upper=500.0)
+
     cf["position_type"]     = pd.cut(
         cf["range_width_pct"],
         bins=[-np.inf, 5, 20, np.inf],
@@ -165,15 +185,16 @@ def main() -> None:
     if pos_path.exists():
         print("Loading positions_current.csv for is_active flag...")
         pos = pd.read_csv(pos_path, low_memory=False)
-        # Normalise tick column names
+        # Normalise tick column names (exact lowercase match only, not substring)
         rename = {}
         for c in pos.columns:
             lc = c.lower()
-            if "tick_lower" in lc and c != "tick_lower":
+            if lc == "tick_lower" and c != "tick_lower":
                 rename[c] = "tick_lower"
-            elif "tick_upper" in lc and c != "tick_upper":
+            elif lc == "tick_upper" and c != "tick_upper":
                 rename[c] = "tick_upper"
-        pos = pos.rename(columns=rename)
+        if rename:
+            pos = pos.rename(columns=rename)
 
         if {"owner", "tick_lower", "tick_upper", "liquidity"}.issubset(pos.columns):
             pos["tick_lower"] = pd.to_numeric(pos["tick_lower"], errors="coerce")
@@ -189,10 +210,10 @@ def main() -> None:
                 axis=1,
             )
         else:
-            print("  [WARN] positions_current.csv missing required columns — is_active set to NA.")
+            print("  [WARN] positions_current.csv missing required columns - is_active set to NA.")
             cf["is_active"] = pd.NA
     else:
-        print("[WARN] positions_current.csv not found — is_active set to NA.")
+        print("[WARN] positions_current.csv not found - is_active set to NA.")
         cf["is_active"] = pd.NA
 
     out = DATA_OUT / "dex_lp_positions.csv"

@@ -5,13 +5,13 @@ Inputs:
     data_raw/DEX/swaps_YYYY_MM.csv  (all months, produced by fetch_all_monthly.py)
 
 Key variables derived:
-    eth_usdc_price     — pool_token0_price (USDC per WETH; direct from subgraph)
-    eth_usdc_price_x96 — independent price from sqrtPriceX96 (cross-check)
+    eth_usdc_price     - pool_token0_price (USDC per WETH; direct from subgraph)
+    eth_usdc_price_x96 - independent price from sqrtPriceX96 (cross-check)
                          formula: 10^12 / (sqrtPriceX96 / 2^96)^2
-    direction          — "buy_eth" | "sell_eth"
-    gas_cost_usd       — gas_cost_eth * eth_usdc_price
-    log_price_change   — log(price_n / price_{n-1}), sorted chronologically
-    trade_size_bucket  — USD notional bin: <1k / 1k-10k / 10k-100k / >100k
+    direction          - "buy_eth" | "sell_eth"
+    gas_cost_usd       - gas_cost_eth * eth_usdc_price
+    log_price_change   - log(price_n / price_{n-1}), sorted chronologically
+    trade_size_bucket  - USD notional bin: <1k / 1k-10k / 10k-100k / >100k
 
 Output:
     data_processed/DEX/dex_swaps.csv
@@ -62,13 +62,20 @@ def main() -> None:
     print(f"\nTotal: {len(df):,} swaps")
 
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
-    df = df.sort_values("timestamp").reset_index(drop=True)
 
-    # Primary DEX price
-    df["eth_usdc_price"] = pd.to_numeric(df["pool_token0_price"], errors="coerce")
+    # Sort by (block_number, log_index) for correct within-block ordering.
+    # Within a block all swaps share the same timestamp, so timestamp alone is insufficient.
+    df["block_number"] = pd.to_numeric(df["block_number"], errors="coerce")
+    df["log_index"]    = pd.to_numeric(df["log_index"],    errors="coerce")
+    df = df.sort_values(["block_number", "log_index"]).reset_index(drop=True)
 
-    # Independent price cross-check from sqrtPriceX96
+    # Accurate ETH price computed from on-chain sqrtPriceX96 (preferred).
+    # pool_token0_price is a stale subgraph-cached value — unreliable for older months.
     df["eth_usdc_price_x96"] = price_from_sqrt(df["sqrt_price_x96"])
+    df["eth_usdc_price"]     = df["eth_usdc_price_x96"]    # use x96 as primary
+
+    # Keep subgraph price for reference / diagnostic comparison
+    df["eth_usdc_price_subgraph"] = pd.to_numeric(df["pool_token0_price"], errors="coerce")
 
     # Direction label
     df["direction"] = df["buy_eth"].map({True: "buy_eth", False: "sell_eth", 1: "buy_eth", 0: "sell_eth"})
@@ -78,8 +85,17 @@ def main() -> None:
         pd.to_numeric(df["gas_cost_eth"], errors="coerce") * df["eth_usdc_price"]
     )
 
-    # Log price change between consecutive swaps
-    df["log_price_change"] = np.log(df["eth_usdc_price"] / df["eth_usdc_price"].shift(1))
+    # Log price change between consecutive swaps (per-swap, from sqrt_price_x96).
+    # Formula: log(P_n/P_{n-1}) = -2*(log(sqrt_n) - log(sqrt_{n-1}))
+    # This is numerically exact for Uniswap v3's Q96-fixed-point price encoding.
+    # Cross-block log_price_change is set to NaN: the price moved between blocks
+    # due to external factors, not because of the swap itself — so it is NOT
+    # interpretable as trade-level price impact.
+    sqrt_num = pd.to_numeric(df["sqrt_price_x96"], errors="coerce").astype(float)
+    log_sqrt  = np.log(sqrt_num)
+    same_block = df["block_number"] == df["block_number"].shift(1)
+    raw_lpc    = -2.0 * (log_sqrt - log_sqrt.shift(1))
+    df["log_price_change"] = np.where(same_block, raw_lpc, np.nan)
 
     # Trade size bucket
     df["trade_size_bucket"] = pd.cut(
@@ -110,7 +126,7 @@ def main() -> None:
     df[out_cols].to_csv(out, index=False)
     print(f"\nSaved {out}")
     print(f"  {len(df):,} rows | {out.stat().st_size / 1e6:.1f} MB")
-    print(f"  Period: {df['timestamp'].min()} → {df['timestamp'].max()}")
+    print(f"  Period: {df['timestamp'].min()} -> {df['timestamp'].max()}")
 
     # Direction breakdown
     if "direction" in df.columns:

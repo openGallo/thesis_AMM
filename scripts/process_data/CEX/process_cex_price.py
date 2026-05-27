@@ -7,10 +7,10 @@ Inputs (auto-discovered):
     Raw Binance CSVs have no header row.
 
 Key variables produced:
-    eth_usdc_price      — direct ETHUSDC close, or synthetic = ETHUSDT / USDCUSDT
-    eth_usdc_synthetic  — always-available synthetic reference
-    log_return_1m       — per-bar log return on eth_usdc_price
-    realized_vol_*_ann  — rolling annualized realized vol (1h / 24h / 7d window)
+    eth_usdc_price      - direct ETHUSDC close, or synthetic = ETHUSDT / USDCUSDT
+    eth_usdc_synthetic  - always-available synthetic reference
+    log_return_1m       - per-bar log return on eth_usdc_price
+    realized_vol_*_ann  - rolling annualized realized vol (1h / 24h / 7d window)
 
 Outputs:
     data_processed/CEX/cex_price_1m.csv
@@ -57,6 +57,15 @@ def load_klines(symbol: str, interval: str = "1m") -> pd.DataFrame:
     df["open_time_ms"] = pd.to_numeric(df["open_time_ms"], errors="coerce")
     df = df.dropna(subset=["open_time_ms"])
     df["open_time_ms"] = df["open_time_ms"].astype("int64")
+
+    # Binance 2025+ monthly klines use microseconds instead of milliseconds.
+    # Detect by checking for 16-digit timestamps (> 10^15 ms = year ~33658).
+    # Convert to ms by dividing by 1000.
+    _MICRO_THRESHOLD = 1_000_000_000_000_000  # 10^15 ms
+    micro_mask = df["open_time_ms"] > _MICRO_THRESHOLD
+    if micro_mask.any():
+        df.loc[micro_mask, "open_time_ms"] = df.loc[micro_mask, "open_time_ms"] // 1000
+
     for col in ("open", "high", "low", "close", "volume_base",
                 "quote_asset_volume", "number_of_trades"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -74,7 +83,7 @@ def main() -> None:
     DATA_OUT.mkdir(parents=True, exist_ok=True)
 
     print("=" * 60)
-    print("CEX Price Processing — Binance 1m klines")
+    print("CEX Price Processing - Binance 1m klines")
     print("=" * 60)
 
     print("Loading ETHUSDC 1m klines...")
@@ -95,9 +104,9 @@ def main() -> None:
 
     all_idx = s_ethusdc.index.union(s_ethusdt.index).union(s_usdcusdt.index)
     if all_idx.empty:
-        raise RuntimeError("No kline data found — run main_import_cex.py first.")
+        raise RuntimeError("No kline data found - run main_import_cex.py first.")
 
-    print(f"\nBuilding 1m panel: {all_idx.min()} → {all_idx.max()}")
+    print(f"\nBuilding 1m panel: {all_idx.min()} -> {all_idx.max()}")
 
     p = pd.DataFrame(index=all_idx)
     p.index.name = "timestamp_utc"

@@ -5,7 +5,7 @@ Theory (Milionis, Moallemi, Roughgarden, Zhang 2024):
     dLVR_t = (1/2) σ_t² p_t² |x'(p_t)| dt
 
 For v3 with active liquidity L at current price p (active-range approximation):
-    x(p) = L/√p  →  |x'(p)| = L/(2p^{3/2})
+    x(p) = L/√p  ->  |x'(p)| = L/(2p^{3/2})
     dLVR_t = (σ_t² L_t √p_t / 4) dt
 
 TVL approximation (balanced pool: x_t · p_t ≈ TVL_t / 2):
@@ -50,9 +50,9 @@ def main() -> None:
     cex_path = DATA_PROC / "CEX" / "cex_price_hourly.csv"
 
     if not dex_path.exists():
-        raise FileNotFoundError(f"{dex_path}\n→ Run process_dex_pool_hourly.py first.")
+        raise FileNotFoundError(f"{dex_path}\n-> Run process_dex_pool_hourly.py first.")
     if not cex_path.exists():
-        raise FileNotFoundError(f"{cex_path}\n→ Run process_cex_price.py first.")
+        raise FileNotFoundError(f"{cex_path}\n-> Run process_cex_price.py first.")
 
     dex = pd.read_csv(dex_path, index_col=0, parse_dates=True)
     dex.index = pd.to_datetime(dex.index, utc=True)

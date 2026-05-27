@@ -74,9 +74,9 @@ def main() -> None:
 
     print(f"\n{'='*60}")
     if failed:
-        print(f"COMPLETED WITH ERRORS — {len(failed)} script(s) failed:")
+        print(f"COMPLETED WITH ERRORS - {len(failed)} script(s) failed:")
         for f in failed:
-            print(f"  • {f}")
+            print(f"  * {f}")
         sys.exit(1)
     else:
         print(f"ALL {len(pipeline)} SCRIPTS COMPLETED SUCCESSFULLY")

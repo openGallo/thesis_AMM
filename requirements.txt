@@ -1,0 +1,21 @@
+# Core data
+numpy>=1.24
+pandas>=2.0
+pyarrow>=14.0
+
+# Statistics & econometrics
+scipy>=1.11
+statsmodels>=0.14
+arch>=6.0
+
+# Visualisation
+matplotlib>=3.7
+
+# Blockchain / data ingestion
+requests>=2.31
+python-dotenv>=1.0
+
+# RL (optional — only needed for rl_lp_agent.py)
+gymnasium>=0.29
+stable-baselines3>=2.2
+torch>=2.1

@@ -8,11 +8,11 @@ Inputs:
     data_processed/CEX/cex_price_hourly.csv
 
 Key variables derived:
-    dex_cex_basis_bps  — (dex_price - cex_price) / cex_price * 10_000
+    dex_cex_basis_bps  - (dex_price - cex_price) / cex_price * 10_000
                          Positive = DEX trading at a premium to CEX.
-    arbitrage_flag     — |basis_bps| > 5  (exceeds the 0.05% pool fee tier;
+    arbitrage_flag     - |basis_bps| > 5  (exceeds the 0.05% pool fee tier;
                          sufficient to cover a round-trip arbitrage trade)
-    dex_cex_vol_ratio  — DEX volume (USD) / CEX volume (USD-equivalent)
+    dex_cex_vol_ratio  - DEX volume (USD) / CEX volume (USD-equivalent)
                          proxy for relative market share
 
 Output:
@@ -47,7 +47,7 @@ CEX_COLS = [
 
 def load_csv(path: Path, name: str) -> pd.DataFrame:
     if not path.exists():
-        raise FileNotFoundError(f"{path}\n→ Run {name} first.")
+        raise FileNotFoundError(f"{path}\n-> Run {name} first.")
     df = pd.read_csv(path, index_col=0, parse_dates=True)
     df.index = pd.to_datetime(df.index, utc=True, errors="coerce")
     df.index.name = "timestamp_utc"
@@ -64,8 +64,8 @@ def main() -> None:
     dex = load_csv(DATA_PROC / "DEX" / "dex_pool_hourly.csv",   "process_dex_pool_hourly.py")
     cex = load_csv(DATA_PROC / "CEX" / "cex_price_hourly.csv",  "process_cex_price.py")
 
-    print(f"DEX: {len(dex):,} hourly rows  ({dex.index.min()} → {dex.index.max()})")
-    print(f"CEX: {len(cex):,} hourly rows  ({cex.index.min()} → {cex.index.max()})")
+    print(f"DEX: {len(dex):,} hourly rows  ({dex.index.min()} -> {dex.index.max()})")
+    print(f"CEX: {len(cex):,} hourly rows  ({cex.index.min()} -> {cex.index.max()})")
 
     # Select columns that actually exist
     dex_sel = dex[[c for c in DEX_COLS if c in dex.columns]]
@@ -94,7 +94,7 @@ def main() -> None:
     vol_cex = merged.get("cex_vol_base_1h_ethusdt")
 
     if vol_dex is not None and vol_cex is not None:
-        # Convert CEX ETH volume → USD using CEX close price for comparability
+        # Convert CEX ETH volume -> USD using CEX close price for comparability
         cex_usd = vol_cex * cex_price if cex_price is not None else vol_cex
         with np.errstate(divide="ignore", invalid="ignore"):
             merged["dex_cex_vol_ratio"] = np.where(

@@ -35,19 +35,21 @@ from dex_utils import (
     run_query, safe_int, safe_float,
 )
 
+# Python-side date gate (avoids server-side timeout from large time-range filters)
+_START_TS: int = int(START_TS)
+_END_TS:   int = int(END_TS)
+
 
 # ── GraphQL queries ───────────────────────────────────────────────────────────
 
 POOL_HOUR_QUERY = """
-query($pool: String!, $start: Int!, $end: Int!, $first: Int!, $lastId: String!) {
+query($pool: String!, $first: Int!, $lastId: String!) {
   poolHourDatas(
     first: $first
     orderBy: id
     orderDirection: asc
     where: {
       pool: $pool
-      periodStartUnix_gte: $start
-      periodStartUnix_lte: $end
       id_gt: $lastId
     }
   ) {
@@ -73,15 +75,13 @@ query($pool: String!, $start: Int!, $end: Int!, $first: Int!, $lastId: String!) 
 """
 
 POOL_DAY_QUERY = """
-query($pool: String!, $start: Int!, $end: Int!, $first: Int!, $lastId: String!) {
+query($pool: String!, $first: Int!, $lastId: String!) {
   poolDayDatas(
     first: $first
     orderBy: id
     orderDirection: asc
     where: {
       pool: $pool
-      date_gte: $start
-      date_lte: $end
       id_gt: $lastId
     }
   ) {
@@ -162,8 +162,6 @@ def fetch_paginated(query: str, entity_name: str) -> list:
     while True:
         variables = {
             "pool":   POOL,
-            "start":  START_TS,
-            "end":    END_TS,
             "first":  BATCH,
             "lastId": last_id,
         }
@@ -215,6 +213,8 @@ def flatten_pool_hour(rows: list) -> pd.DataFrame:
     df = pd.DataFrame(out)
     if not df.empty:
         df = df.sort_values("period_start_unix")
+        # Keep only rows within study window (server-side filters removed to avoid 504)
+        df = df[(df["period_start_unix"] >= _START_TS) & (df["period_start_unix"] <= _END_TS)]
     return df
 
 
@@ -245,6 +245,8 @@ def flatten_pool_day(rows: list) -> pd.DataFrame:
     df = pd.DataFrame(out)
     if not df.empty:
         df = df.sort_values("date_unix")
+        # Keep only rows within study window (server-side filters removed to avoid 504)
+        df = df[(df["date_unix"] >= _START_TS) & (df["date_unix"] <= _END_TS)]
     return df
 
 
@@ -312,7 +314,7 @@ def main() -> None:
     df_bundle = pd.DataFrame([{
         "id":              bundle["bundle"]["id"],
         "eth_price_usd":  safe_float(bundle["bundle"]["ethPriceUSD"]),
-        "downloaded_at_utc": pd.Timestamp.utcnow(),
+        "downloaded_at_utc": pd.Timestamp.now("UTC"),
     }])
     bundle_file = data_dir / "bundle_current.csv"
     df_bundle.to_csv(bundle_file, index=False)

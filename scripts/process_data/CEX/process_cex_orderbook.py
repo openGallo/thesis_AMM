@@ -10,8 +10,8 @@ Inputs (auto-discovered):
         bid_depth_quote_{1,5,10,50}bps, ask_depth_quote_{1,5,10,50}bps
 
 Key variables produced:
-    spread_bps_mean / median / p95  — intraday spread distribution
-    bid/ask_depth_{N}bps_mean       — average notional depth within N bps of mid
+    spread_bps_mean / median / p95  - intraday spread distribution
+    bid/ask_depth_{N}bps_mean       - average notional depth within N bps of mid
 
 Output:
     data_processed/CEX/cex_orderbook_daily.csv

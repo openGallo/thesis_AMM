@@ -8,34 +8,34 @@ in the thesis theoretical model.
 Parameters extracted:
 
   Price dynamics:
-    mu_daily, sigma_daily      — GBM drift and volatility (daily)
-    sigma_hourly               — hourly realized vol (for simulation step calibration)
+    mu_daily, sigma_daily      - GBM drift and volatility (daily)
+    sigma_hourly               - hourly realized vol (for simulation step calibration)
 
   Trade arrival (DEX):
-    lambda_day, lambda_hour    — Poisson arrival rate (trades per unit time)
-    mu_q_lognormal             — log-mean of trade size in USD (lognormal fit)
-    sigma_q_lognormal          — log-std of trade size in USD
-    p25/p50/p75/p95_trade_usd  — trade size percentiles
+    lambda_day, lambda_hour    - Poisson arrival rate (trades per unit time)
+    mu_q_lognormal             - log-mean of trade size in USD (lognormal fit)
+    sigma_q_lognormal          - log-std of trade size in USD
+    p25/p50/p75/p95_trade_usd  - trade size percentiles
 
   Gas dynamics:
-    mean_gas_gwei              — mean gas price during sample (Gwei)
-    std_gas_gwei               — std of gas price
-    ar1_rho_gas                — AR(1) persistence of log gas price
-    mean_gas_usd_per_swap      — average gas cost per swap in USD
+    mean_gas_gwei              - mean gas price during sample (Gwei)
+    std_gas_gwei               - std of gas price
+    ar1_rho_gas                - AR(1) persistence of log gas price
+    mean_gas_usd_per_swap      - average gas cost per swap in USD
 
   Pool state:
-    fee_tier                   — always 0.0005
-    median_tvl_usd             — median TVL
-    median_liquidity           — median active liquidity (raw units)
-    vol_over_tvl_mean          — mean hourly volume / TVL
+    fee_tier                   - always 0.0005
+    median_tvl_usd             - median TVL
+    median_liquidity           - median active liquidity (raw units)
+    vol_over_tvl_mean          - mean hourly volume / TVL
 
   Stress regime:
-    vol_stress_threshold_ann   — 90th percentile vol (label as "stress")
-    stress_fraction            — fraction of hours above the threshold
+    vol_stress_threshold_ann   - 90th percentile vol (label as "stress")
+    stress_fraction            - fraction of hours above the threshold
 
   LVR:
-    lvr_rate_ann_mean          — mean annualized LVR rate (as fraction of TVL)
-    lvr_to_fee_ratio_mean      — mean LVR / fee income ratio
+    lvr_rate_ann_mean          - mean annualized LVR rate (as fraction of TVL)
+    lvr_to_fee_ratio_mean      - mean LVR / fee income ratio
 
 Inputs:
     data_processed/DEX/dex_pool_hourly.csv
@@ -127,7 +127,7 @@ def main() -> None:
                 cex["realized_vol_24h_ann"].mean() if "realized_vol_24h_ann" in cex.columns else None
             ),
         }
-        print(f"  Price: σ_daily={sigma_daily:.4f}  μ_daily={mu_daily:.6f}")
+        print(f"  Price: sigma_daily={sigma_daily:.4f}  mu_daily={mu_daily:.6f}")
 
         # Stress regime: hours where 24h realized vol > 90th percentile
         if "realized_vol_24h_ann" in cex.columns:
@@ -140,7 +140,7 @@ def main() -> None:
             }
             print(f"  Stress: vol_threshold={threshold:.4f}  stress_frac={stress_frac:.3f}")
     else:
-        missing.append("cex_price_hourly.csv — run process_cex_price.py")
+        missing.append("cex_price_hourly.csv - run process_cex_price.py")
         print("[WARN] CEX price data missing")
 
     # ── DEX pool metrics ──────────────────────────────────────────────────────
@@ -161,16 +161,16 @@ def main() -> None:
             "fee_apr_ann_mean":   _safe_float(dex["fee_apr_ann"].mean()),
         }
 
-        # Trade arrival intensity: tx_count per hour → per day
+        # Trade arrival intensity: tx_count per hour -> per day
         lam_hour = float(dex["tx_count"].mean())
         lam_day  = lam_hour * 24
         params["trade_arrival"] = {
             "lambda_hour": _safe_float(lam_hour),
             "lambda_day":  _safe_float(lam_day),
         }
-        print(f"  Trade arrival: λ_hour={lam_hour:.1f}  λ_day={lam_day:.0f}")
+        print(f"  Trade arrival: lambda__hour={lam_hour:.1f}  lambda__day={lam_day:.0f}")
     else:
-        missing.append("dex_pool_hourly.csv — run process_dex_pool_hourly.py")
+        missing.append("dex_pool_hourly.csv - run process_dex_pool_hourly.py")
         print("[WARN] DEX pool hourly data missing")
 
     # ── Swap-level trade size and gas ─────────────────────────────────────────
@@ -195,7 +195,7 @@ def main() -> None:
             "p95_usd":       _safe_float(float(q.quantile(0.95))),
             "p99_usd":       _safe_float(float(q.quantile(0.99))),
         }
-        print(f"  Trade size: median=${q.median():,.0f}  μ_log={mu_q:.3f}  σ_log={sig_q:.3f}")
+        print(f"  Trade size: median=${q.median():,.0f}  mu_log={mu_q:.3f}  sigma_log={sig_q:.3f}")
 
         # Gas
         gwei = pd.to_numeric(swaps["gas_price_wei"], errors="coerce").dropna() / 1e9
@@ -212,10 +212,10 @@ def main() -> None:
             "mean_gas_usd_per_swap":   _safe_float(float(gas_usd.mean())),
             "median_gas_usd_per_swap": _safe_float(float(gas_usd.median())),
         }
-        print(f"  Gas: mean={gwei.mean():.1f} Gwei  ρ={rho_g:.3f}  "
+        print(f"  Gas: mean={gwei.mean():.1f} Gwei  rho={rho_g:.3f}  "
               f"mean_cost=${gas_usd.mean():.2f}")
     else:
-        missing.append("dex_swaps.csv — run process_dex_swaps.py")
+        missing.append("dex_swaps.csv - run process_dex_swaps.py")
         print("[WARN] Swap data missing")
 
     # ── LVR ───────────────────────────────────────────────────────────────────
@@ -232,7 +232,7 @@ def main() -> None:
         }
         print(f"  LVR: rate_ann_mean={lvr['lvr_rate_ann'].mean():.4%}")
     else:
-        missing.append("dex_lvr_hourly.csv — run process_dex_lvr.py")
+        missing.append("dex_lvr_hourly.csv - run process_dex_lvr.py")
 
     # ── Write outputs ─────────────────────────────────────────────────────────
     out_json = DATA_OUT / "calibration_params.json"
@@ -255,7 +255,7 @@ def main() -> None:
     if missing:
         print(f"\n[WARN] {len(missing)} data source(s) not available yet:")
         for m in missing:
-            print(f"  • {m}")
+            print(f"  * {m}")
 
     print("\nDONE")
 

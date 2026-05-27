@@ -72,3 +72,8 @@ output/tables/*.xlsx
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ============================================================
+# Claude Code session memory (not source code)
+# ============================================================
+.claude/
