@@ -79,11 +79,25 @@ desktop.ini
 .claude/
 
 # ============================================================
-# Causal inference scripts (private / work in progress)
+# All analysis / processing scripts (moved to private repo)
 # ============================================================
-scripts/analysis/causal_inference/
+scripts/analysis/
+scripts/process_data/
+generate_thesis.py
 
 # ============================================================
-# Thesis PDF
+# Thesis PDF and LaTeX outputs
 # ============================================================
 thesis_arthur_gallo.pdf
+thesis/thesis.pdf
+thesis/*.aux
+thesis/*.log
+thesis/*.out
+thesis/*.toc
+thesis/*.lof
+thesis/*.lot
+thesis/*.bbl
+thesis/*.blg
+thesis/*.fls
+thesis/*.fdb_latexmk
+thesis/*.synctex.gz
