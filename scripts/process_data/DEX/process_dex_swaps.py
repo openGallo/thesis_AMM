@@ -75,7 +75,10 @@ def main() -> None:
     df["eth_usdc_price"]     = df["eth_usdc_price_x96"]    # use x96 as primary
 
     # Keep subgraph price for reference / diagnostic comparison
-    df["eth_usdc_price_subgraph"] = pd.to_numeric(df["pool_token0_price"], errors="coerce")
+    if "pool_token0_price" in df.columns:
+        df["eth_usdc_price_subgraph"] = pd.to_numeric(df["pool_token0_price"], errors="coerce")
+    else:
+        df["eth_usdc_price_subgraph"] = float("nan")
 
     # Direction label
     df["direction"] = df["buy_eth"].map({True: "buy_eth", False: "sell_eth", 1: "buy_eth", 0: "sell_eth"})

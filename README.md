@@ -160,6 +160,15 @@ python scripts/process_data/run_all.py
 ```
 Runs all processing scripts in dependency order. **~2–5 min.**
 
+### 6 — Validate processed outputs
+```powershell
+python scripts/check_processed_integrity.py
+```
+Checks all processed files for schema, row counts, value ranges, OHLCV sanity, formula
+consistency (LVR = σ²/8, DEX-CEX price correlation > 0.99, fee_rate = 0.0005), and
+calibration plausibility. Saves a report to `reports/processed_integrity_YYYY-MM-DD.txt`.
+Exit code 1 if any check fails.
+
 ---
 
 ## Processed outputs
