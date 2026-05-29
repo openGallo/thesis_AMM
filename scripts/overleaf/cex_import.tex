@@ -1,0 +1,1547 @@
+\documentclass[11pt,a4paper]{article}
+
+% ============================================================
+% Packages
+% ============================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[a4paper,left=0.68in,right=0.68in,top=0.70in,bottom=0.85in,
+  includeheadfoot,headheight=14pt,footskip=24pt]{geometry}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,tabularx,array,adjustbox,xltabular,makecell,
+  ragged2e,etoolbox,needspace,placeins,hyphenat,longtable}
+\usepackage{xcolor}
+\usepackage{xurl}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+
+\hypersetup{colorlinks=true,linkcolor=blue!45!black,
+  urlcolor=blue!45!black,citecolor=blue!45!black}
+
+% ============================================================
+% Layout
+% ============================================================
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\raggedbottom
+\sloppy
+\emergencystretch=4em
+\tolerance=9999
+\hbadness=9999
+\vfuzz=2pt
+\hfuzz=1pt
+
+\setlist[itemize]{leftmargin=*,itemsep=2pt,topsep=2pt,parsep=0pt}
+\setlist[enumerate]{leftmargin=*,itemsep=2pt,topsep=2pt,parsep=0pt}
+
+\setlength{\tabcolsep}{2.5pt}
+\renewcommand{\arraystretch}{1.08}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash\hspace{0pt}}X}
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash\hspace{0pt}}p{#1}}
+
+\AtBeginEnvironment{xltabular}{%
+  \scriptsize\setlength{\tabcolsep}{2.5pt}\renewcommand{\arraystretch}{1.08}}
+\AtEndEnvironment{xltabular}{\normalsize}
+\AtBeginEnvironment{longtable}{%
+  \scriptsize\setlength{\tabcolsep}{2.5pt}\renewcommand{\arraystretch}{1.08}}
+\AtEndEnvironment{longtable}{\normalsize}
+
+\lstdefinestyle{code}{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  frame=single,
+  framesep=3pt,
+  xleftmargin=0pt,
+  xrightmargin=0pt,
+  linewidth=\linewidth,
+  rulecolor=\color{black!20},
+  backgroundcolor=\color{black!2},
+  aboveskip=4pt,
+  belowskip=4pt
+}
+\lstset{style=code}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{CEX Import Documentation}
+\rhead{\thepage/\pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.3pt}
+
+\title{\textbf{CEX Import Documentation}\\
+\large Binance Historical Data and Live Order-Book Collector\\
+for the AMM Thesis\\[4pt]
+\normalsize Version 1.0 \quad|\quad May 2026}
+\author{Arthur Gallo}
+\date{May 2026}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+\begin{abstract}
+This document describes the centralised-exchange (CEX) raw-data import
+module used for the AMM thesis. It records which Python script imports
+which data object, the output folder structure, the raw file formats
+and column definitions, the download and retry behaviour, the default
+test parameters, the full historical import preset, and the connection
+between imported CEX variables and AMM calibration objects.
+
+All column descriptions, constants, formulas, status values, and
+file-path conventions have been verified directly against the source
+scripts (\texttt{cex\_config.py}, \texttt{binance\_download\_utils.py},
+\texttt{main\_import\_cex.py}, \texttt{fetch\_binance\_klines.py},
+\texttt{fetch\_binance\_agg\_trades.py},
+\texttt{collect\_binance\_orderbook\_rest.py}).
+
+The import module writes raw outputs to
+\path{C:\Courses\thesis_AMM\data_raw\CEX\binance}. Cleaning,
+resampling, merging with DEX data, and model-parameter estimation
+are deferred to \path{C:\Courses\thesis_AMM\scripts\process_data\CEX}.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Abbreviations and Terminology}
+\label{sec:glossary}
+
+\begin{xltabular}{\linewidth}{L{3.0cm}Y}
+\toprule
+\textbf{Term} & \textbf{Definition} \\
+\midrule
+CEX & Centralised exchange. An exchange in which a central operator
+     maintains the order book and matches trades. \\
+DEX & Decentralised exchange. An on-chain automated market maker. \\
+AMM & Automated market maker. \\
+ETH & Ether. The native asset of the Ethereum blockchain. On centralised
+     exchanges, ETH balances are maintained internally and do not require
+     ERC-20 wrapping. \\
+WETH & Wrapped Ether. An ERC-20 token pegged 1:1 to ETH, used by Uniswap
+      v3 on-chain. The symbol for the DEX pool is WETH/USDC; the
+      corresponding CEX pair is ETH/USDC. \\
+USDC & USD Coin. A USD-pegged ERC-20 stablecoin. \\
+USDT & Tether. A USD-pegged stablecoin. \\
+Kline & Candlestick. A summary of trading activity over a fixed interval:
+        open, high, low, close prices, base volume, quote volume, and
+        trade count. Also called a candle or OHLCV bar. \\
+Agg trade & Aggregate trade. A Binance representation in which all raw
+            fills from a single taker order executed at the same price and
+            millisecond are compressed into one record. \\
+OHLCV & Open, High, Low, Close, Volume. Standard candlestick fields. \\
+VWAP & Volume-weighted average price: $\sum_i p_i q_i / \sum_i q_i$. \\
+Basis point (bp) & One hundredth of one percent ($0.0001$). \\
+NDJSON & Newline-delimited JSON. A file format where each line is one
+         self-contained JSON object. \\
+SHA-256 & A cryptographic hash function used here to fingerprint
+          downloaded ZIP archives for integrity verification. \\
+LVR & Loss-versus-rebalancing. A metric comparing AMM LP returns against
+      a passive rebalancing strategy. \\
+\bottomrule
+\end{xltabular}
+
+% ============================================================
+\section{Purpose and Scope}
+\label{sec:purpose}
+
+The CEX import module collects publicly available Binance market data
+needed to calibrate and validate the AMM thesis model. The DEX side of
+the thesis is obtained from The Graph (Uniswap v3 event-level data,
+documented separately). The CEX side provides an external reference
+market for ETH prices, realised volatility, centralised-exchange volume,
+trade counts, trade-size distributions, bid--ask spreads, and
+order-book depth.
+
+The key empirical comparison is between the Uniswap v3 WETH/USDC
+price and the CEX reference ETH price:
+\[
+  d_t = \frac{p_t^{\mathrm{AMM}} - p_t^{*}}{p_t^{*}},
+\]
+where $p_t^{*}$ is constructed from the imported CEX data.
+
+\noindent\textbf{What the module provides.}
+\begin{itemize}
+  \item Historical Binance klines (candlesticks) for ETHUSDC, ETHUSDT,
+        and USDCUSDT at 1-minute and 5-minute intervals.
+  \item Historical Binance aggregate trades for the same symbols.
+  \item Prospective live order-book snapshots from the moment the
+        collector is started.
+\end{itemize}
+
+\noindent\textbf{What the module does not provide.}
+\begin{itemize}
+  \item Historical full limit-order-book depth (not freely available
+        in backfill form from Binance public data).
+  \item Individual order submissions and cancellations.
+  \item Private user identifiers or hidden liquidity.
+  \item Trade-flow labels (arbitrage, market-making, noise flow).
+  \item Merged DEX--CEX panels (deferred to processing).
+\end{itemize}
+
+\noindent\textbf{Why WETH/USDC versus ETH/USDC.} The Uniswap v3 pool
+trades WETH on-chain because Ethereum smart contracts require the
+ERC-20 wrapped form. Centralised exchanges record ETH balances
+internally and do not need wrapping. The CEX benchmark therefore uses
+the ETH/USDC and ETH/USDT symbols, which are economically equivalent
+to WETH/USDC for the purpose of constructing $p_t^{*}$.
+
+\noindent\textbf{Symbol coverage and period justification.}
+Three symbols are used:
+
+\begin{xltabular}{\linewidth}{L{2.6cm}L{3.2cm}Y}
+\toprule
+\textbf{Symbol} & \textbf{Pair} & \textbf{Justification} \\
+\midrule
+\texttt{ETHUSDC} & ETH priced in USDC & Direct USDC-denominated benchmark
+  for the Uniswap v3 WETH/USDC pool. Available on Binance from a later
+  date than ETHUSDT; missing periods return \texttt{missing\_404} in
+  the manifest. \\
+\texttt{ETHUSDT} & ETH priced in USDT & Longer benchmark available from
+  2017. Required for the full 2022--2026 sample period when ETHUSDC
+  is incomplete. \\
+\texttt{USDCUSDT} & USDC priced in USDT & Stablecoin-basis correction
+  pair. Used to construct a synthetic USDC-denominated ETH price:
+  $p^{\mathrm{ETH/USDC}}_t \approx p^{\mathrm{ETH/USDT}}_t /
+  p^{\mathrm{USDC/USDT}}_t$. \\
+\bottomrule
+\end{xltabular}
+
+% ============================================================
+\section{Project Folder Convention}
+\label{sec:paths}
+
+\begin{lstlisting}
+C:\Courses\thesis_AMM\
+    data_raw\
+        CEX\
+            binance\
+    data_processed\
+        CEX\
+    scripts\
+        import_data\
+            CEX\
+                cex_config.py
+                binance_download_utils.py
+                main_import_cex.py
+                fetch_binance_klines.py
+                fetch_binance_agg_trades.py
+                collect_binance_orderbook_rest.py
+        process_data\
+            CEX\
+    output\
+        tables\
+        figures\
+    docs\
+\end{lstlisting}
+
+\noindent\textbf{Path resolution.}
+\texttt{cex\_config.py} resolves the project root using
+\texttt{Path(\_\_file\_\_).resolve().parents[3]}, which assumes the
+script resides exactly three directory levels below the project root
+(i.e.\ in \texttt{scripts\textbackslash import\_data\textbackslash
+CEX\textbackslash}). Moving any script to a different depth will
+silently write outputs to an incorrect location unless
+\texttt{.parents[3]} is updated.
+
+\noindent\textbf{Raw versus processed data.}
+The raw folder (\texttt{data\_raw\textbackslash CEX\textbackslash
+binance}) stores files as close as possible to the original Binance
+format. No column names, values, or types are modified during import.
+Conversion, resampling, and merging are deferred to
+\texttt{scripts\textbackslash process\_data\textbackslash CEX}.
+
+% ============================================================
+\section{Script Inventory}
+\label{sec:inventory}
+
+\begin{xltabular}{\linewidth}{L{5.0cm}L{2.8cm}Y}
+\toprule
+\textbf{File} & \textbf{Role} & \textbf{Responsibility} \\
+\midrule
+\texttt{run\_cex.py} & Top-level runner &
+  Recommended entry point. Located one directory above the CEX scripts
+  (in \texttt{scripts\textbackslash import\_data\textbackslash}).
+  Sets \texttt{PYTHONIOENCODING=utf-8} automatically, then invokes
+  \texttt{main\_import\_cex.py --full-history}. Accepts
+  \texttt{--orderbook} (enable live order-book collection) and
+  \texttt{--overwrite} (re-download existing files). \\
+\addlinespace
+\texttt{cex\_config.py} & Shared configuration &
+  Defines \texttt{PROJECT\_ROOT}, output paths, Binance endpoints,
+  HTTP behaviour constants, and raw CSV column-name lists
+  (\texttt{KLINE\_COLUMNS}, \texttt{AGG\_TRADE\_COLUMNS}) for use in
+  downstream processing scripts. \\
+\addlinespace
+\texttt{binance\_download\_utils.py} & Download utilities &
+  Provides period iterators, URL builder, local-path resolver,
+  ZIP downloader with retry, CSV extractor, SHA-256 hasher,
+  manifest writer, and the \texttt{DownloadResult} dataclass.
+  All other scripts import from here. \\
+\addlinespace
+\texttt{main\_import\_cex.py} & Main controller &
+  Core parameter file. Defines all user parameters and the
+  full-history preset. Accepts command-line overrides. Calls kline,
+  aggregate-trade, and order-book scripts. Invoked by
+  \texttt{run\_cex.py} for the standard full-history import. \\
+\addlinespace
+\texttt{fetch\_binance\_klines.py} & Historical candles &
+  Downloads Binance spot kline ZIP archives for specified symbols,
+  intervals, date range, and granularity. Can be run directly. \\
+\addlinespace
+\texttt{fetch\_binance\_agg\_trades.py} & Historical aggregate trades &
+  Downloads Binance spot aggregate-trade ZIP archives for specified
+  symbols and periods. Can be run directly. \\
+\addlinespace
+\texttt{collect\_binance\_orderbook\_rest.py} & Live order-book
+  collector &
+  Polls the Binance REST depth endpoint at a configurable interval.
+  Writes compact spread/depth CSV summaries and optional full
+  NDJSON snapshots. Prospective only; no historical backfill. \\
+\bottomrule
+\end{xltabular}
+
+% ============================================================
+\section{Shared Configuration: \texttt{cex\_config.py}}
+\label{sec:config}
+
+\subsection{Paths and Endpoints}
+
+\begin{xltabular}{\linewidth}{L{5.2cm}L{4.5cm}Y}
+\toprule
+\textbf{Name} & \textbf{Value} & \textbf{Description} \\
+\midrule
+\texttt{PROJECT\_ROOT} &
+  \texttt{Path(\_\_file\_\_).resolve()} \newline \texttt{.parents[3]} &
+  Resolved at import time. Points to
+  \path{C:\Courses\thesis_AMM} when the script is in
+  \texttt{scripts\textbackslash import\_data\textbackslash CEX}. \\
+\texttt{DEFAULT\_OUTPUT\_ROOT} &
+  \texttt{PROJECT\_ROOT / "data\_raw" / "CEX"} &
+  General raw CEX data root. \\
+\texttt{BINANCE\_OUTPUT\_ROOT} &
+  \texttt{DEFAULT\_OUTPUT\_ROOT / "binance"} &
+  Binance-specific raw data root; used as the default
+  \texttt{output\_root} throughout all scripts. \\
+\texttt{BINANCE\_PUBLIC\_DATA\_BASE\_URL} &
+  \texttt{https://data.binance.vision/data} &
+  Base URL for Binance Data Vision public ZIP archives. \\
+\texttt{BINANCE\_SPOT\_API\_BASE\_URL} &
+  \texttt{https://api.binance.com} &
+  Base URL for the live Binance REST API (order-book endpoint). \\
+\bottomrule
+\end{xltabular}
+
+\subsection{Download Behaviour Constants}
+
+\begin{xltabular}{\linewidth}{L{5.2cm}L{2.0cm}Y}
+\toprule
+\textbf{Name} & \textbf{Value} & \textbf{Description} \\
+\midrule
+\texttt{REQUEST\_TIMEOUT\_SECONDS} & \texttt{60} &
+  HTTP request timeout in seconds, applied to both the public-data
+  downloader and the REST order-book fetcher. \\
+\texttt{MAX\_RETRIES} & \texttt{3} &
+  Maximum download attempts per file in \texttt{download\_zip}.
+  The order-book \texttt{fetch\_depth} function also uses 3 retries
+  (hard-coded in its signature default). \\
+\texttt{RETRY\_SLEEP\_SECONDS} & \texttt{2.0} &
+  Fixed pause between retry attempts in \texttt{download\_zip}.
+  Not exponential: the wait is \texttt{RETRY\_SLEEP\_SECONDS}
+  on every retry except the last. The order-book fetcher uses
+  an independent hard-coded 2.0-second sleep between its retries. \\
+\texttt{DEFAULT\_SLEEP\_BETWEEN\_ DOWNLOADS\_SECONDS} &
+  \texttt{0.25} &
+  Pause applied after each successful (or skipped) public-data
+  file request. Applied unconditionally when \texttt{sleep\_seconds
+  > 0}. \\
+\bottomrule
+\end{xltabular}
+
+\subsection{Raw CSV Column-Name Lists}
+
+Binance Data Vision CSV files are stored without a header row.
+\texttt{cex\_config.py} provides two ordered lists of column names
+for use in downstream processing scripts. The import scripts
+themselves do not inject these names into the raw files.
+
+\texttt{KLINE\_COLUMNS} (in order):
+\texttt{open\_time\_ms},
+\texttt{open},
+\texttt{high},
+\texttt{low},
+\texttt{close},
+\texttt{volume\_base},
+\texttt{close\_time\_ms},
+\texttt{quote\_asset\_volume},
+\texttt{number\_of\_trades},
+\texttt{taker\_buy\_base\_volume},
+\texttt{taker\_buy\_quote\_volume},
+\texttt{ignore}.
+
+\texttt{AGG\_TRADE\_COLUMNS} (in order):
+\texttt{agg\_trade\_id},
+\texttt{price},
+\texttt{quantity},
+\texttt{first\_trade\_id},
+\texttt{last\_trade\_id},
+\texttt{transact\_time\_ms},
+\texttt{is\_buyer\_maker},
+\texttt{is\_best\_match}.
+
+% ============================================================
+\section{Download Utilities: \texttt{binance\_download\_utils.py}}
+\label{sec:utils}
+
+\subsection{The \texttt{DownloadResult} Dataclass}
+
+Every call to \texttt{download\_one\_binance\_public\_file} returns a
+frozen \texttt{DownloadResult} instance and appends one row to the
+manifest. The fields are:
+
+\begin{xltabular}{\linewidth}{L{3.8cm}L{2.6cm}Y}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\texttt{exchange} & \texttt{str} &
+  Always \texttt{"binance"}. \\
+\texttt{market\_type} & \texttt{str} &
+  Always \texttt{"spot"}. \\
+\texttt{data\_type} & \texttt{str} &
+  \texttt{"klines"} or \texttt{"aggTrades"}. \\
+\texttt{symbol} & \texttt{str} &
+  Upper-stripped symbol, e.g.\ \texttt{"ETHUSDC"}. \\
+\texttt{interval} & \texttt{str} &
+  Kline interval, e.g.\ \texttt{"1m"}. Empty string for aggTrades. \\
+\texttt{granularity} & \texttt{str} &
+  \texttt{"daily"} or \texttt{"monthly"}. \\
+\texttt{period} & \texttt{str} &
+  \texttt{YYYY-MM-DD} for daily; \texttt{YYYY-MM} for monthly. \\
+\texttt{url} & \texttt{str} &
+  Full remote URL requested. \\
+\texttt{zip\_path} & \texttt{Path} &
+  Local path of the ZIP archive. \\
+\texttt{extracted\_dir} & \texttt{Optional[Path]} &
+  Directory where CSV was extracted; \texttt{None} if extraction
+  did not occur or no CSV member was found inside the ZIP. \\
+\texttt{status} & \texttt{str} &
+  See Section~\ref{sec:statuses}. \\
+\texttt{bytes\_downloaded} & \texttt{int} &
+  Bytes downloaded, or local file size when status is
+  \texttt{exists}/\texttt{exists\_extracted}. Zero for
+  \texttt{missing\_404} and \texttt{failed}. \\
+\texttt{sha256} & \texttt{str} &
+  SHA-256 hex digest of the local ZIP file. Computed after
+  download or when status is \texttt{exists}. Empty string for
+  \texttt{missing\_404} and \texttt{failed}. \\
+\texttt{error} & \texttt{str} &
+  Error message if applicable; empty string otherwise. \\
+\bottomrule
+\end{xltabular}
+
+\subsection{Download Status Values}
+\label{sec:statuses}
+
+The \texttt{download\_zip} function returns one of four primitive
+statuses (\texttt{downloaded}, \texttt{exists}, \texttt{missing\_404},
+\texttt{failed}). The wrapper
+\texttt{download\_one\_binance\_public\_file} then appends the suffix
+\texttt{\_extracted} or \texttt{\_no\_csv} when applicable, and may
+override to \texttt{failed\_extract}. The full set of possible
+\texttt{status} values written to the manifest is:
+
+\begin{xltabular}{\linewidth}{L{4.8cm}Y}
+\toprule
+\textbf{Status} & \textbf{Meaning} \\
+\midrule
+\texttt{downloaded} &
+  ZIP downloaded successfully; extraction not requested
+  (\texttt{extract=False}). \\
+\texttt{downloaded\_extracted} &
+  ZIP downloaded and at least one CSV member extracted. \\
+\texttt{downloaded\_no\_csv} &
+  ZIP downloaded but no member with a \texttt{.csv} extension
+  was found inside. \\
+\texttt{exists} &
+  ZIP already present locally and non-empty; not re-downloaded
+  (\texttt{overwrite=False}); extraction not requested. \\
+\texttt{exists\_extracted} &
+  ZIP already present; CSV files were available or extracted from it. \\
+\texttt{missing\_404} &
+  HTTP 404 received. Expected for symbol-period combinations that
+  do not exist on Binance (e.g.\ ETHUSDC before the symbol launched).
+  The 404 is not retried. \\
+\texttt{failed} &
+  All \texttt{MAX\_RETRIES} = 3 download attempts failed. The
+  temporary \texttt{.tmp} file is deleted. \\
+\texttt{failed\_extract} &
+  Download or existence check succeeded, but an exception was
+  raised during SHA-256 computation or CSV extraction. \\
+\bottomrule
+\end{xltabular}
+
+\subsection{URL Construction}
+\label{sec:urls}
+
+\texttt{build\_data\_vision\_url} constructs Binance Data Vision URLs
+of the following patterns:
+
+\begin{lstlisting}
+# klines (daily)
+https://data.binance.vision/data/spot/daily/klines/<SYM>/<INT>/<SYM>-<INT>-<YYYY-MM-DD>.zip
+
+# klines (monthly)
+https://data.binance.vision/data/spot/monthly/klines/<SYM>/<INT>/<SYM>-<INT>-<YYYY-MM>.zip
+
+# aggTrades (daily)
+https://data.binance.vision/data/spot/daily/aggTrades/<SYM>/<SYM>-aggTrades-<YYYY-MM-DD>.zip
+
+# aggTrades (monthly)
+https://data.binance.vision/data/spot/monthly/aggTrades/<SYM>/<SYM>-aggTrades-<YYYY-MM>.zip
+\end{lstlisting}
+
+A non-empty \texttt{interval} is required for klines; passing an
+empty string raises a \texttt{ValueError}. For aggTrades, the
+\texttt{interval} parameter is ignored.
+
+\subsection{Local Path Layout}
+\label{sec:localpaths}
+
+\texttt{local\_paths(output\_root, ...)} returns
+\texttt{(zip\_path, extract\_dir)}. The paths follow this layout:
+
+\begin{lstlisting}
+# Extracted CSVs (output_root is data_raw\CEX\binance)
+output_root\spot\<granularity>\klines\<SYM>\<INT>\
+output_root\spot\<granularity>\aggTrades\<SYM>\
+
+# ZIP archives
+output_root\zip_archives\spot\<granularity>\klines\<SYM>\<INT>\
+output_root\zip_archives\spot\<granularity>\aggTrades\<SYM>\
+\end{lstlisting}
+
+Note that the comment in \texttt{local\_paths} says
+``\texttt{output\_root/binance/\ldots}'', but since
+\texttt{output\_root} is already set to
+\texttt{BINANCE\_OUTPUT\_ROOT} (which ends in \texttt{binance}), the
+actual paths do \emph{not} contain a double \texttt{binance/binance}
+segment. The comment is slightly misleading; the actual path produced
+for extracted klines is:
+\begin{lstlisting}
+C:\Courses\thesis_AMM\data_raw\CEX\binance\spot\<granularity>\klines\<SYM>\<INT>\
+\end{lstlisting}
+
+\subsection{Period Iterators}
+
+\begin{itemize}
+  \item \texttt{iter\_days(start\_date, end\_date)} --- yields
+        \texttt{date} objects from \texttt{start\_date} to
+        \texttt{end\_date} inclusive (one per calendar day).
+  \item \texttt{iter\_months(start\_date, end\_date)} --- yields
+        \texttt{"YYYY-MM"} strings from the month of
+        \texttt{start\_date} to the month of \texttt{end\_date}
+        inclusive (one per calendar month).
+  \item \texttt{periods\_for\_granularity(...)} --- dispatches to the
+        correct iterator and returns a \texttt{list[str]}.
+\end{itemize}
+
+Both iterators raise \texttt{ValueError} if \texttt{end\_date <
+start\_date}.
+
+\subsection{ZIP Download and Retry}
+
+\texttt{download\_zip} downloads to a temporary file
+\texttt{<name>.zip.tmp} and atomically renames it to \texttt{<name>.zip}
+on success. This prevents corrupt partial files from being mistaken
+for completed downloads. Key behaviours:
+
+\begin{itemize}
+  \item A 404 response is returned immediately as
+        \texttt{missing\_404} without retrying.
+  \item A zero-byte download sets \texttt{last\_error} and retries.
+  \item Any other exception (timeout, connection error, non-404
+        HTTP error) is caught, stored in \texttt{last\_error}, and
+        retried up to \texttt{MAX\_RETRIES = 3} times with a fixed
+        \texttt{RETRY\_SLEEP\_SECONDS = 2.0} second pause between
+        attempts. The retry wait is \emph{not} exponential.
+  \item The \texttt{.tmp} file is deleted on exhaustion.
+\end{itemize}
+
+\subsection{CSV Extraction}
+
+\texttt{extract\_zip\_csv} opens the ZIP with
+\texttt{zipfile.ZipFile} and extracts all members whose names end in
+\texttt{.csv} (case-insensitive). Existing files are skipped unless
+\texttt{overwrite=True}. The raw CSV content is written exactly as
+found in the archive; no column names or type conversions are applied.
+
+\subsection{SHA-256 Hashing}
+
+\texttt{sha256\_file} reads the ZIP file in 1~MiB blocks and
+returns the hexadecimal SHA-256 digest. This digest is stored in the
+manifest and can be used to verify that a local archive has not been
+corrupted or altered since download. The hash is computed on the
+\emph{ZIP file}, not on the extracted CSV.
+
+\subsection{Manifest Writer}
+
+\texttt{append\_manifest\_row} appends one row to
+\texttt{output\_root / "download\_manifest.csv"}. The file is created
+with a header on first write (detected by checking whether the file
+exists). The \texttt{timestamp\_utc} field is set to
+\texttt{datetime.now(timezone.utc).replace(microsecond=0).isoformat()},
+i.e.\ a second-resolution ISO-8601 UTC string, at the time the row is
+written --- which is after download, extraction, and hashing, not at
+the time the HTTP request was issued.
+
+% ============================================================
+\section{Main Controller: \texttt{main\_import\_cex.py}}
+\label{sec:main}
+
+\subsection{Purpose}
+
+\texttt{main\_import\_cex.py} is the recommended entry point. All
+user parameters are centralised here; individual fetch scripts need
+not be edited. The script builds a configuration dictionary from the
+module-level constants, applies optional CLI overrides, then calls
+\texttt{download\_binance\_klines}, \texttt{download\_binance\_agg\_trades},
+and (optionally) \texttt{collect\_orderbook\_snapshots}.
+
+\subsection{Default Test Parameters}
+
+The module-level constants are deliberately small to allow a fast
+test before running the full import.
+
+\begin{xltabular}{\linewidth}{L{4.8cm}L{3.0cm}Y}
+\toprule
+\textbf{Constant} & \textbf{Default value} & \textbf{Meaning} \\
+\midrule
+\texttt{OUTPUT\_ROOT} & \texttt{BINANCE\_OUTPUT\_ROOT} &
+  Binance raw-data output directory (from \texttt{cex\_config.py}). \\
+\texttt{START\_DATE} & \texttt{"2024-01-01"} &
+  First date to import. \\
+\texttt{END\_DATE} & \texttt{"2024-01-02"} &
+  Last date; inclusive for daily files. \\
+\texttt{ARCHIVE\_GRANULARITY} & \texttt{"daily"} &
+  Use daily Binance public-data archives. \\
+\texttt{SYMBOLS} & \texttt{["ETHUSDC"]} &
+  Symbol list for the test import. \\
+\texttt{INTERVALS} & \texttt{["1m", "5m"]} &
+  Kline intervals to download. \\
+\texttt{DOWNLOAD\_KLINES} & \texttt{True} &
+  Download historical kline files. \\
+\texttt{DOWNLOAD\_AGG\_TRADES} & \texttt{True} &
+  Download historical aggregate-trade files. \\
+\texttt{EXTRACT\_ZIP} & \texttt{True} &
+  Extract CSV from downloaded ZIPs. \\
+\texttt{KEEP\_ZIP} & \texttt{True} &
+  Retain original ZIP archives. \\
+\texttt{OVERWRITE} & \texttt{False} &
+  Skip files that already exist locally. \\
+\texttt{SLEEP\_BETWEEN\_DOWNLOADS\_SECONDS} &
+  \texttt{DEFAULT\_SLEEP\_ BETWEEN\_DOWNLOADS\_ SECONDS} &
+  Inherited from \texttt{cex\_config.py}: 0.25 seconds. \\
+\texttt{COLLECT\_LIVE\_ORDERBOOK} & \texttt{False} &
+  Order-book collection is disabled by default. \\
+\texttt{ORDERBOOK\_SYMBOLS} & \texttt{["ETHUSDC"]} &
+  Symbols for live order-book collection. \\
+\texttt{ORDERBOOK\_SECONDS} & \texttt{60} &
+  Collect for 60 seconds; 0 means run until \texttt{Ctrl+C}. \\
+\texttt{ORDERBOOK\_INTERVAL\_SEC} & \texttt{10.0} &
+  Target polling interval in seconds. \\
+\texttt{ORDERBOOK\_LIMIT} & \texttt{1000} &
+  Maximum bid/ask levels requested from the REST endpoint. \\
+\texttt{ORDERBOOK\_DEPTH\_BPS} & \texttt{[1, 5, 10, 50]} &
+  Basis-point thresholds for depth aggregation. \\
+\texttt{ORDERBOOK\_SAVE\_FULL\_SNAPSHOTS} & \texttt{True} &
+  Save full NDJSON snapshots in addition to CSV summaries. \\
+\bottomrule
+\end{xltabular}
+
+Default test command (small ETHUSDC import, 2024-01-01 to 2024-01-02):
+\begin{lstlisting}
+python scripts\import_data\CEX\main_import_cex.py
+\end{lstlisting}
+
+\subsection{Full-History Preset}
+
+Activated by \texttt{--full-history}. The preset is defined in
+\texttt{apply\_full\_history\_preset()} and returns a dictionary that
+\texttt{cfg.update()} merges into the base configuration, overriding
+only the keys listed:
+
+\begin{xltabular}{\linewidth}{L{3.8cm}L{3.0cm}Y}
+\toprule
+\textbf{Key} & \textbf{Value} & \textbf{Notes} \\
+\midrule
+\texttt{start\_date} & \texttt{"2022-01-01"} &
+  Extended sample start. \\
+\texttt{end\_date} & \texttt{"2026-04-30"} &
+  Thesis data cut. \\
+\texttt{granularity} & \texttt{"monthly"} &
+  Monthly archives to avoid thousands of daily requests. \\
+\texttt{symbols} & \texttt{["ETHUSDC", "ETHUSDT", "USDCUSDT"]} &
+  Full symbol set. ETHUSDC files before its Binance launch date
+  will return \texttt{missing\_404}. \\
+\texttt{intervals} & \texttt{["1m", "5m"]} &
+  Unchanged from defaults. \\
+\texttt{download\_klines} & \texttt{True} & \\
+\texttt{download\_agg\_trades} & \texttt{True} & \\
+\bottomrule
+\end{xltabular}
+
+All other keys (\texttt{extract\_zip}, \texttt{keep\_zip},
+\texttt{overwrite}, \texttt{sleep\_between\_downloads\_seconds},
+all \texttt{orderbook\_*}) retain their module-level defaults unless
+separately overridden by CLI arguments.
+
+Recommended full-history command (from project root):
+\begin{lstlisting}
+python scripts\import_data\run_cex.py
+\end{lstlisting}
+Alternatively, invoke \texttt{main\_import\_cex.py} directly:
+\begin{lstlisting}
+python scripts\import_data\CEX\main_import_cex.py --full-history
+\end{lstlisting}
+
+\subsection{Command-Line Overrides}
+
+CLI arguments are parsed by \texttt{apply\_cli\_overrides}. They take
+effect after the preset (if \texttt{--full-history} is set), so a CLI
+override can further narrow the full-history preset.
+
+\begin{xltabular}{\linewidth}{L{5.0cm}Y}
+\toprule
+\textbf{Argument} & \textbf{Effect} \\
+\midrule
+\texttt{--full-history} &
+  Apply the full-history preset before any other overrides. \\
+\texttt{--start YYYY-MM-DD} & Override \texttt{start\_date}. \\
+\texttt{--end YYYY-MM-DD} & Override \texttt{end\_date}. For daily
+  files, \texttt{end\_date} is inclusive. \\
+\texttt{--granularity daily|monthly} & Override archive granularity. \\
+\texttt{--symbols A,B,C} & Override symbol list (comma-separated). \\
+\texttt{--intervals 1m,5m} & Override kline intervals
+  (comma-separated). \\
+\texttt{--output-root PATH} & Override \texttt{output\_root}. \\
+\texttt{--no-klines} & Set \texttt{download\_klines = False}. \\
+\texttt{--no-agg-trades} & Set \texttt{download\_agg\_trades = False}. \\
+\texttt{--overwrite} & Set \texttt{overwrite = True}. \\
+\texttt{--no-extract} & Set \texttt{extract\_zip = False}. \\
+\texttt{--delete-zip-after-extract} & Set \texttt{keep\_zip = False}.
+  Deletes each ZIP after extracting its CSV. Not recommended because
+  it removes the SHA-256-verifiable source archive. \\
+\texttt{--collect-orderbook} & Set \texttt{collect\_live\_orderbook
+  = True}. \\
+\bottomrule
+\end{xltabular}
+
+% ============================================================
+\section{Historical Klines: \texttt{fetch\_binance\_klines.py}}
+\label{sec:klines}
+
+\subsection{Download Logic}
+
+\texttt{download\_binance\_klines} iterates over the Cartesian product
+of symbols $\times$ intervals $\times$ periods and calls
+\texttt{download\_one\_binance\_public\_file} for each triple. Symbols
+and intervals are normalised to uppercase/stripped before use.
+The function returns a list of \texttt{DownloadResult} objects.
+
+Direct invocation example:
+\begin{lstlisting}
+python scripts\import_data\CEX\fetch_binance_klines.py ^
+  --symbols ETHUSDC ^
+  --intervals 1m,5m ^
+  --start 2024-01-01 ^
+  --end 2024-01-02 ^
+  --granularity daily
+\end{lstlisting}
+
+\subsection{Output Paths}
+
+\begin{lstlisting}
+# Extracted CSV
+C:\...\data_raw\CEX\binance\spot\<gran>\klines\<SYM>\<INT>\<SYM>-<INT>-<PERIOD>.csv
+
+# ZIP archive
+C:\...\data_raw\CEX\binance\zip_archives\spot\<gran>\klines\<SYM>\<INT>\<SYM>-<INT>-<PERIOD>.zip
+\end{lstlisting}
+
+\subsection{Raw Kline CSV Format}
+
+Raw klines CSV files have \textbf{no header row}. The 12 columns must
+be assigned names from \texttt{KLINE\_COLUMNS} in the processing
+stage. All numeric fields are stored as decimal strings by Binance
+and should be cast to \texttt{float64} during processing.
+
+\begin{xltabular}{\linewidth}{L{4.8cm}L{2.8cm}Y}
+\toprule
+\textbf{Column name} & \textbf{Raw type} & \textbf{Description} \\
+\midrule
+\texttt{open\_time\_ms} & Integer string &
+  UTC open time of the kline in milliseconds since Unix epoch.
+  Divide by 1000 to obtain seconds; use
+  \texttt{pd.to\_datetime(..., unit="ms", utc=True)} for conversion. \\
+\texttt{open} & Decimal string &
+  Opening price. \\
+\texttt{high} & Decimal string &
+  Highest traded price during the interval. \\
+\texttt{low} & Decimal string &
+  Lowest traded price during the interval. \\
+\texttt{close} & Decimal string &
+  Closing price. Baseline candidate for $p_t^{*}$ in simple
+  processing. \\
+\texttt{volume\_base} & Decimal string &
+  Total base-asset volume during the interval. For ETHUSDC and
+  ETHUSDT, this is ETH quantity. \\
+\texttt{close\_time\_ms} & Integer string &
+  UTC close time in milliseconds. Equal to
+  \texttt{open\_time\_ms} $+$ interval duration $-$ 1 ms. \\
+\texttt{quote\_asset\_volume} & Decimal string &
+  Total quote-asset volume. For ETHUSDC: USDC; for ETHUSDT: USDT.
+  Used to construct $Q_t^{\mathrm{CEX}}$. \\
+\texttt{number\_of\_trades} & Integer string &
+  Number of trades during the interval. Proxy for
+  $N_t^{\mathrm{CEX}}$. \\
+\texttt{taker\_buy\_base\_volume} & Decimal string &
+  Base-asset volume from taker buy orders. Useful for signed
+  order-flow proxies. \\
+\texttt{taker\_buy\_quote\_volume} & Decimal string &
+  Quote-asset volume from taker buy orders. \\
+\texttt{ignore} & String &
+  Binance-provided unused field. Drop during processing. \\
+\bottomrule
+\end{xltabular}
+
+\subsection{Model Objects Constructed from Klines}
+
+\begin{align*}
+  p_t^{*} &= \text{CEX reference price (close, mid, or VWAP)}, \\
+  r_t &= \log p_t^{*} - \log p_{t-1}^{*}, \\
+  \sigma_t^{(1\mathrm{m})} &=
+    \sqrt{1440}\;\mathrm{sd}\!\left(r_{t-1439},\ldots,r_t\right)
+    \quad\text{(1-min daily realised volatility)},\\
+  \sigma_t^{(5\mathrm{m})} &=
+    \sqrt{288}\;\mathrm{sd}\!\left(r_{t-287},\ldots,r_t\right)
+    \quad\text{(5-min daily realised volatility)},\\
+  Q_t^{\mathrm{CEX}} &= \texttt{quote\_asset\_volume}, \\
+  N_t^{\mathrm{CEX}} &= \texttt{number\_of\_trades}.
+\end{align*}
+
+The square-root scaling assumes i.i.d.\ returns over the interval
+and converts the per-interval standard deviation to a daily measure.
+A more robust estimator (e.g.\ Parkinson or Garman--Klass using the
+high and low fields) can be constructed in the processing stage.
+
+% ============================================================
+\section{Historical Aggregate Trades: \texttt{fetch\_binance\_agg\_trades.py}}
+\label{sec:aggtrades}
+
+\subsection{Download Logic}
+
+\texttt{download\_binance\_agg\_trades} iterates over symbols
+$\times$ periods (no interval dimension). Otherwise the logic is
+identical to the kline downloader.
+
+Direct invocation example:
+\begin{lstlisting}
+python scripts\import_data\CEX\fetch_binance_agg_trades.py ^
+  --symbols ETHUSDC ^
+  --start 2024-01-01 ^
+  --end 2024-01-02 ^
+  --granularity daily
+\end{lstlisting}
+
+\subsection{Output Paths}
+
+\begin{lstlisting}
+# Extracted CSV
+C:\...\data_raw\CEX\binance\spot\<gran>\aggTrades\<SYM>\<SYM>-aggTrades-<PERIOD>.csv
+
+# ZIP archive
+C:\...\data_raw\CEX\binance\zip_archives\spot\<gran>\aggTrades\<SYM>\<SYM>-aggTrades-<PERIOD>.zip
+\end{lstlisting}
+
+\subsection{What Is an Aggregate Trade?}
+
+A Binance aggregate trade is a record in which all individual raw
+fills from a single taker order that were matched at the same price
+within the same millisecond are compressed into one entry. The number
+of raw fills compressed is \texttt{last\_trade\_id} $-$
+\texttt{first\_trade\_id} $+$ 1. When a taker order is matched across
+multiple price levels or milliseconds, it produces multiple aggregate
+trade records.
+
+This differs from a kline in that aggregate trades preserve
+sub-interval granularity and individual transaction prices, but
+differs from the raw matching-engine feed in that fine-grained fills
+at the same price and millisecond are collapsed. Aggregate trades are
+not uniquely attributed to individual users.
+
+\subsection{Raw Aggregate-Trade CSV Format}
+
+Raw aggregate-trade CSV files have \textbf{no header row}. Assign
+names from \texttt{AGG\_TRADE\_COLUMNS} during processing.
+
+\begin{xltabular}{\linewidth}{L{4.2cm}L{2.8cm}Y}
+\toprule
+\textbf{Column name} & \textbf{Raw type} & \textbf{Description} \\
+\midrule
+\texttt{agg\_trade\_id} & Integer string &
+  Monotonically increasing aggregate-trade identifier for the symbol.
+  Use for deduplication and ordering when combining files. \\
+\texttt{price} & Decimal string &
+  Transaction price in quote-asset units. \\
+\texttt{quantity} & Decimal string &
+  Traded quantity in base-asset units. For ETH pairs, this is ETH. \\
+\texttt{first\_trade\_id} & Integer string &
+  First underlying raw-trade ID compressed into this aggregate. \\
+\texttt{last\_trade\_id} & Integer string &
+  Last underlying raw-trade ID. The number of underlying fills is
+  \texttt{last\_trade\_id} $-$ \texttt{first\_trade\_id} $+$ 1. \\
+\texttt{transact\_time\_ms} & Integer string &
+  Transaction timestamp in milliseconds since Unix epoch (UTC).
+  Use for time-bucketing and CEX--DEX alignment. \\
+\texttt{is\_buyer\_maker} & Boolean string &
+  \texttt{True} if the buyer was the maker (i.e.\ the seller was
+  the aggressor/taker). A taker sell corresponds to
+  \texttt{is\_buyer\_maker = True}; a taker buy corresponds to
+  \texttt{is\_buyer\_maker = False}. \\
+\texttt{is\_best\_match} & Boolean string &
+  Exchange-provided match-quality flag. Typically \texttt{True} for
+  all records in the downloaded files; retain and check during
+  processing. \\
+\bottomrule
+\end{xltabular}
+
+\paragraph{Trade direction convention.}
+The \texttt{is\_buyer\_maker} field follows the Binance convention:
+\begin{align*}
+  \texttt{is\_buyer\_maker} = \texttt{True}
+  &\;\Rightarrow\; \text{seller was the taker (aggressive sell)},\\
+  \texttt{is\_buyer\_maker} = \texttt{False}
+  &\;\Rightarrow\; \text{buyer was the taker (aggressive buy)}.
+\end{align*}
+Signed order flow (positive = net buy) can be constructed during
+processing as:
+$\delta_i = (+q_i)$ if \texttt{is\_buyer\_maker} $=$ \texttt{False},
+else $\delta_i = (-q_i)$.
+
+\subsection{Model Objects Constructed from Aggregate Trades}
+
+For interval $t$:
+\begin{align*}
+  N_t^{\mathrm{CEX}} &=
+    \#\{\text{aggregate trades with }
+    \texttt{transact\_time\_ms} \in t\}, \\
+  Q_t^{\mathrm{CEX}} &= \sum_{i \in t} p_i\, q_i, \\
+  \bar{q}_t^{\mathrm{CEX}} &=
+    \frac{Q_t^{\mathrm{CEX}}}{N_t^{\mathrm{CEX}}}, \\
+  p_t^{\mathrm{VWAP}} &=
+    \frac{\sum_{i \in t} p_i\, q_i}{\sum_{i \in t} q_i}, \\
+  \Delta_t^{\mathrm{CEX}} &=
+    \sum_{i \in t} \delta_i
+    \quad \text{(signed net order flow in base-asset units)}.
+\end{align*}
+
+% ============================================================
+\section{Live Order-Book Collector:
+  \texttt{collect\_binance\_orderbook\_rest.py}}
+\label{sec:orderbook}
+
+\subsection{Purpose and Scope}
+
+This script polls the Binance REST depth endpoint
+(\texttt{GET /api/v3/depth}) at a configurable interval. It is a
+\emph{prospective} collector: it records snapshots from the moment
+it is started and does not backfill historical order-book state.
+For the thesis, it provides bid--ask spreads and order-book depth
+going forward from the date of collection.
+
+\subsection{Polling Logic and Timing}
+
+For each polling cycle, the script:
+\begin{enumerate}
+  \item Records \texttt{loop\_start = time.monotonic()}.
+  \item For each symbol, calls \texttt{fetch\_depth} (with up to 3
+        retries and a hard-coded 2.0-second sleep between retries,
+        independent of \texttt{RETRY\_SLEEP\_SECONDS}).
+  \item Appends the compact summary row to the daily CSV.
+  \item Optionally appends the full snapshot to the daily NDJSON.
+  \item Computes \texttt{elapsed = time.monotonic() - loop\_start}
+        and sleeps \texttt{max(0, interval\_sec - elapsed)} seconds.
+\end{enumerate}
+
+The cycle time is therefore bounded below by the HTTP latency and
+above by \texttt{interval\_sec} (default 10.0 seconds). If processing
+all symbols takes longer than \texttt{interval\_sec}, the next cycle
+starts immediately with no sleep. Timestamps in the output files
+reflect the \emph{local system clock} at the time each snapshot is
+processed, not the server time embedded in the REST response.
+
+The script runs until \texttt{seconds} have elapsed (\texttt{seconds
+= 0} means run indefinitely until \texttt{Ctrl+C}
+(\texttt{KeyboardInterrupt})).
+
+\subsection{Output Paths}
+
+\begin{lstlisting}
+C:\...\data_raw\CEX\binance\live_orderbook\<SYM>\depth_summary_YYYYMMDD.csv
+C:\...\data_raw\CEX\binance\live_orderbook\<SYM>\depth_snapshots_YYYYMMDD.ndjson
+\end{lstlisting}
+
+The date key (\texttt{YYYYMMDD}) is computed from
+\texttt{datetime.now(timezone.utc)} at the start of each polling cycle.
+If the collector runs across a UTC midnight, a new daily file is started
+automatically.
+
+\subsection{Depth Computation}
+
+The \texttt{summarize\_depth} function extracts the best bid and ask
+from the first element of the returned bid and ask arrays (already
+sorted best-first by Binance), computes the midprice and spread, and
+then calls \texttt{notional\_depth\_within\_bps} for each threshold
+$b \in \{1, 5, 10, 50\}$.
+
+The depth filter is:
+\begin{align*}
+  \mathcal{B}_t(b) &= \left\{ j : p_j^{\mathrm{bid}} \geq
+    p_t^{\mathrm{mid}}\!\left(1 - \tfrac{b}{10000}\right) \right\}, \\
+  \mathcal{A}_t(b) &= \left\{ j : p_j^{\mathrm{ask}} \leq
+    p_t^{\mathrm{mid}}\!\left(1 + \tfrac{b}{10000}\right) \right\}.
+\end{align*}
+
+The quote-asset notional depth is:
+\[
+  D_t^{\mathrm{bid}}(b) =
+    \sum_{j \in \mathcal{B}_t(b)} p_j^{\mathrm{bid}}\, q_j^{\mathrm{bid}},
+  \qquad
+  D_t^{\mathrm{ask}}(b) =
+    \sum_{j \in \mathcal{A}_t(b)} p_j^{\mathrm{ask}}\, q_j^{\mathrm{ask}}.
+\]
+
+The spread is:
+\[
+  s_t^{\mathrm{abs}} = p_t^{\mathrm{ask}} - p_t^{\mathrm{bid}},
+  \qquad
+  s_t^{\mathrm{bps}} = \frac{10000 \cdot s_t^{\mathrm{abs}}}
+    {p_t^{\mathrm{mid}}}.
+\]
+
+$s_t^{\mathrm{bps}}$ is set to \texttt{None} (and written as an empty
+field in the CSV) if $p_t^{\mathrm{mid}} = 0$.
+
+\subsection{Compact CSV Summary Format}
+
+Written to \texttt{depth\_summary\_YYYYMMDD.csv} (one row per
+snapshot per symbol). The CSV has a header row written on first
+creation.
+
+\begin{xltabular}{\linewidth}{L{4.8cm}L{2.4cm}Y}
+\toprule
+\textbf{Column name} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\texttt{timestamp\_utc} & ISO string &
+  UTC timestamp at which the row was written (second resolution,
+  from \texttt{utc\_now\_iso()}). Reflects local processing time,
+  not server time. \\
+\texttt{exchange} & string &
+  Always \texttt{"binance"}. \\
+\texttt{symbol} & string &
+  Trading pair, e.g.\ \texttt{"ETHUSDC"} (upper-stripped). \\
+\texttt{last\_update\_id} & integer &
+  Binance order-book update ID from the REST response
+  (\texttt{lastUpdateId}). Can be used to detect missed updates. \\
+\texttt{best\_bid} & float &
+  \texttt{float(bids[0][0])}: the highest bid price returned. \\
+\texttt{best\_ask} & float &
+  \texttt{float(asks[0][0])}: the lowest ask price returned. \\
+\texttt{mid\_price} & float &
+  $(\texttt{best\_bid} + \texttt{best\_ask}) / 2$. \\
+\texttt{spread\_abs} & float &
+  $\texttt{best\_ask} - \texttt{best\_bid}$. \\
+\texttt{spread\_bps} & float/None &
+  $10000 \times \texttt{spread\_abs} / \texttt{mid\_price}$.
+  \texttt{None} if midprice is zero. \\
+\texttt{bid\_levels\_returned} & integer &
+  Length of the \texttt{bids} array in the REST response. At most
+  \texttt{limit} levels (default 1000). \\
+\texttt{ask\_levels\_returned} & integer &
+  Length of the \texttt{asks} array. \\
+\texttt{bid\_depth\_quote\_1bps} & float &
+  $D_t^{\mathrm{bid}}(1)$. \\
+\texttt{ask\_depth\_quote\_1bps} & float &
+  $D_t^{\mathrm{ask}}(1)$. \\
+\texttt{bid\_depth\_quote\_5bps} & float &
+  $D_t^{\mathrm{bid}}(5)$. \\
+\texttt{ask\_depth\_quote\_5bps} & float &
+  $D_t^{\mathrm{ask}}(5)$. \\
+\texttt{bid\_depth\_quote\_10bps} & float &
+  $D_t^{\mathrm{bid}}(10)$. \\
+\texttt{ask\_depth\_quote\_10bps} & float &
+  $D_t^{\mathrm{ask}}(10)$. \\
+\texttt{bid\_depth\_quote\_50bps} & float &
+  $D_t^{\mathrm{bid}}(50)$. \\
+\texttt{ask\_depth\_quote\_50bps} & float &
+  $D_t^{\mathrm{ask}}(50)$. \\
+\bottomrule
+\end{xltabular}
+
+\subsection{Full Snapshot NDJSON Format}
+
+Written to \texttt{depth\_snapshots\_YYYYMMDD.ndjson}. Each line is
+one JSON object (no trailing comma; files are opened in append mode).
+
+\begin{xltabular}{\linewidth}{L{3.6cm}Y}
+\toprule
+\textbf{Field} & \textbf{Description} \\
+\midrule
+\texttt{timestamp\_utc} & ISO UTC timestamp (same value as in the
+  summary CSV row). \\
+\texttt{exchange} & Always \texttt{"binance"}. \\
+\texttt{symbol} & Trading pair. \\
+\texttt{depth\_limit} & The \texttt{limit} parameter passed to the
+  REST request (default 1000). \\
+\texttt{depth} & Raw JSON response body: a dict with
+  \texttt{lastUpdateId} (integer), \texttt{bids} (list of
+  [\textit{price\_str}, \textit{qty\_str}] pairs, best-first),
+  and \texttt{asks} (list of [\textit{price\_str},
+  \textit{qty\_str}] pairs, best-first). \\
+\bottomrule
+\end{xltabular}
+
+\subsection{Using the Collector from Main}
+
+When \texttt{COLLECT\_LIVE\_ORDERBOOK = True} in
+\texttt{main\_import\_cex.py}, the controller calls
+\texttt{collect\_orderbook\_snapshots} with the parameters
+\texttt{ORDERBOOK\_SYMBOLS}, \texttt{ORDERBOOK\_SECONDS},
+\texttt{ORDERBOOK\_INTERVAL\_SEC}, \texttt{ORDERBOOK\_LIMIT},
+\texttt{ORDERBOOK\_DEPTH\_BPS}, and
+\texttt{ORDERBOOK\_SAVE\_FULL\_SNAPSHOTS}. The collector runs
+after all historical downloads complete. To run the collector
+independently without downloading historical files, use:
+
+\begin{lstlisting}
+python scripts\import_data\CEX\collect_binance_orderbook_rest.py ^
+  --symbols ETHUSDC,ETHUSDT ^
+  --seconds 0 ^
+  --interval-sec 10 ^
+  --limit 1000 ^
+  --depth-bps 1,5,10,50
+\end{lstlisting}
+
+% ============================================================
+\section{Manifest File}
+\label{sec:manifest}
+
+\begin{lstlisting}
+C:\Courses\thesis_AMM\data_raw\CEX\binance\download_manifest.csv
+\end{lstlisting}
+
+Every call to \texttt{download\_one\_binance\_public\_file} appends
+exactly one row. The manifest is the central reproducibility file for
+the CEX import. It is written by \texttt{append\_manifest\_row} in
+\texttt{binance\_download\_utils.py}.
+
+\begin{xltabular}{\linewidth}{L{4.0cm}Y}
+\toprule
+\textbf{Column name} & \textbf{Description} \\
+\midrule
+\texttt{timestamp\_utc} &
+  ISO-8601 UTC timestamp (second resolution) at which the manifest
+  row was written. This is after download, extraction, and hashing
+  have completed, not the HTTP request time. \\
+\texttt{exchange} & Always \texttt{"binance"}. \\
+\texttt{market\_type} & Always \texttt{"spot"}. \\
+\texttt{data\_type} & \texttt{"klines"} or \texttt{"aggTrades"}. \\
+\texttt{symbol} & Trading pair, uppercase. \\
+\texttt{interval} & Kline interval (\texttt{"1m"}, \texttt{"5m"}, etc.).
+  Empty string for aggTrades. \\
+\texttt{granularity} & \texttt{"daily"} or \texttt{"monthly"}. \\
+\texttt{period} & \texttt{YYYY-MM-DD} (daily) or \texttt{YYYY-MM}
+  (monthly). \\
+\texttt{url} & Full remote URL requested. \\
+\texttt{zip\_path} & Absolute local path of the ZIP archive. \\
+\texttt{extracted\_dir} & Directory where CSV was extracted. Empty
+  string when \texttt{extracted\_dir} is \texttt{None} in the
+  \texttt{DownloadResult}. \\
+\texttt{status} & One of the status values in
+  Section~\ref{sec:statuses}. \\
+\texttt{bytes\_downloaded} & Bytes written or file size. 0 for
+  \texttt{missing\_404} and \texttt{failed}. \\
+\texttt{sha256} & Hex SHA-256 digest of the local ZIP. Empty string
+  when the file was not written or available. \\
+\texttt{error} & Error message. Empty string when no error. \\
+\bottomrule
+\end{xltabular}
+
+% ============================================================
+\section{Full Output Directory Structure}
+\label{sec:structure}
+
+\textbf{After the default test import}
+(\texttt{ETHUSDC}, daily, 2024-01-01 to 2024-01-02):
+
+\begin{lstlisting}
+data_raw\CEX\binance\
+    download_manifest.csv
+    spot\daily\klines\ETHUSDC\1m\ETHUSDC-1m-2024-01-01.csv
+                                 ETHUSDC-1m-2024-01-02.csv
+                          \5m\ETHUSDC-5m-2024-01-01.csv
+                                 ETHUSDC-5m-2024-01-02.csv
+    spot\daily\aggTrades\ETHUSDC\ETHUSDC-aggTrades-2024-01-01.csv
+                                 ETHUSDC-aggTrades-2024-01-02.csv
+    zip_archives\spot\daily\klines\ETHUSDC\1m\*.zip
+                                          \5m\*.zip
+    zip_archives\spot\daily\aggTrades\ETHUSDC\*.zip
+\end{lstlisting}
+
+\textbf{After the full-history import}
+(\texttt{ETHUSDC}, \texttt{ETHUSDT}, \texttt{USDCUSDT},
+monthly, 2022-01 to 2026-04):
+
+\begin{lstlisting}
+data_raw\CEX\binance\
+    download_manifest.csv
+    spot\monthly\klines\ETHUSDC\1m\*.csv
+                               \5m\*.csv
+    spot\monthly\klines\ETHUSDT\1m\*.csv
+                               \5m\*.csv
+    spot\monthly\klines\USDCUSDT\1m\*.csv
+                                \5m\*.csv
+    spot\monthly\aggTrades\ETHUSDC\*.csv
+    spot\monthly\aggTrades\ETHUSDT\*.csv
+    spot\monthly\aggTrades\USDCUSDT\*.csv
+    zip_archives\spot\monthly\klines\...
+    zip_archives\spot\monthly\aggTrades\...
+\end{lstlisting}
+
+\textbf{Live order-book output} (if collector is activated):
+
+\begin{lstlisting}
+data_raw\CEX\binance\
+    live_orderbook\ETHUSDC\depth_summary_YYYYMMDD.csv
+                          \depth_snapshots_YYYYMMDD.ndjson
+    live_orderbook\ETHUSDT\depth_summary_YYYYMMDD.csv
+                          \depth_snapshots_YYYYMMDD.ndjson
+\end{lstlisting}
+
+% ============================================================
+\section{Imported Data to Model Calibration Objects}
+\label{sec:use}
+
+\begin{xltabular}{\linewidth}{L{3.0cm}L{3.8cm}Y}
+\toprule
+\textbf{Model object} & \textbf{Raw source} & \textbf{Construction} \\
+\midrule
+$p_t^{*}$ &
+  Klines or agg trades &
+  Use kline \texttt{close}, mid-interval price, or aggregate-trade
+  VWAP as the external CEX reference price. \\
+$r_t$ &
+  $p_t^{*}$ &
+  $\log p_t^{*} - \log p_{t-1}^{*}$. \\
+$\sigma_t$ &
+  Klines &
+  Realised volatility from scaled standard deviation of
+  $r_t$; or Parkinson/Garman--Klass using \texttt{high} and
+  \texttt{low}. \\
+$Q_t^{\mathrm{CEX}}$ &
+  Klines or agg trades &
+  \texttt{quote\_asset\_volume} from klines, or
+  $\sum_{i \in t} p_i q_i$ from aggregate trades. \\
+$N_t^{\mathrm{CEX}}$ &
+  Klines or agg trades &
+  \texttt{number\_of\_trades} from klines, or count of aggregate
+  trade rows by interval. \\
+$\bar{q}_t^{\mathrm{CEX}}$ &
+  Agg trades &
+  $Q_t^{\mathrm{CEX}} / N_t^{\mathrm{CEX}}$. \\
+$p_t^{\mathrm{VWAP}}$ &
+  Agg trades &
+  $\sum_{i \in t} p_i q_i / \sum_{i \in t} q_i$. \\
+$\Delta_t^{\mathrm{CEX}}$ &
+  Agg trades &
+  Signed net order flow: $\sum_{i \in t} \delta_i$ where
+  $\delta_i = +q_i$ if \texttt{is\_buyer\_maker = False},
+  else $-q_i$. \\
+$s_t$ &
+  Order-book summary &
+  \texttt{spread\_bps} or
+  $\texttt{spread\_abs} / \texttt{mid\_price}$. \\
+$D_t^{\mathrm{CEX}}(b)$ &
+  Order-book summary &
+  $D_t^{\mathrm{bid}}(b)$ or $D_t^{\mathrm{ask}}(b)$ for
+  $b \in \{1, 5, 10, 50\}$ bp. \\
+$p_t^{\mathrm{ETH/USDC}}$ (synthetic) &
+  ETHUSDT $+$ USDCUSDT klines or agg trades &
+  $p_t^{\mathrm{ETH/USDT}} / p_t^{\mathrm{USDC/USDT}}$;
+  used to extend the USDC-denominated benchmark before ETHUSDC
+  was available on Binance. \\
+$d_t$ &
+  DEX AMM price $+$ $p_t^{*}$ &
+  $(p_t^{\mathrm{AMM}} - p_t^{*}) / p_t^{*}$; computed after
+  merging with the DEX data. \\
+\bottomrule
+\end{xltabular}
+
+% ============================================================
+\section{Quality Checks}
+\label{sec:qc}
+
+After import and before processing:
+
+\begin{enumerate}
+  \item \textbf{Manifest completeness.}
+        Confirm \texttt{download\_manifest.csv} has one row per
+        (symbol, interval/data-type, period) combination. Count
+        \texttt{missing\_404} rows and record the set of unavailable
+        symbol-period pairs.
+
+  \item \textbf{Expected file count.}
+        For the full-history monthly import:
+        count rows with status containing \texttt{extracted} and
+        verify the count equals
+        (3 symbols $\times$ 2 intervals $\times$ 52 months) for
+        klines plus (3 symbols $\times$ 52 months) for aggTrades,
+        less any \texttt{missing\_404} rows.
+
+  \item \textbf{SHA-256 integrity.}
+        Re-hash each local ZIP and compare against the manifest
+        \texttt{sha256} field to detect post-download corruption.
+
+  \item \textbf{CSV column count.}
+        Read each extracted CSV and verify it has exactly 12 columns
+        (klines) or 8 columns (aggregate trades).
+
+  \item \textbf{No-header check.}
+        Confirm the first row of each CSV is numeric, not a header
+        string (Binance public-data files vary in this respect for
+        some symbols/periods).
+
+  \item \textbf{Timestamp monotonicity.}
+        For klines: verify \texttt{open\_time\_ms} is strictly
+        increasing within each file. For aggregate trades: verify
+        \texttt{agg\_trade\_id} is strictly increasing and
+        \texttt{transact\_time\_ms} is non-decreasing.
+
+  \item \textbf{No inter-file gaps or overlaps.}
+        For klines: the \texttt{open\_time\_ms} of the first row in
+        file $m{+}1$ should equal the \texttt{close\_time\_ms} of the
+        last row in file $m$ plus 1 millisecond.
+
+  \item \textbf{No inter-file duplicate agg trade IDs.}
+        When combining monthly aggregate-trade files, verify that
+        \texttt{agg\_trade\_id} values across consecutive files do not
+        overlap.
+
+  \item \textbf{Price sanity.}
+        Check that \texttt{low} $\leq$ \texttt{open},
+        \texttt{close} $\leq$ \texttt{high} for every kline row.
+
+  \item \textbf{Volume non-negativity.}
+        Confirm \texttt{volume\_base}, \texttt{quote\_asset\_volume},
+        \texttt{taker\_buy\_base\_volume}, and
+        \texttt{taker\_buy\_quote\_volume} are non-negative.
+
+  \item \textbf{USDC depeg window.}
+        Flag rows where \texttt{open\_time\_ms} or
+        \texttt{transact\_time\_ms} falls between approximately
+        2023-03-10 and 2023-03-13 UTC. During this period, USDC
+        briefly traded below \$1.00. All ETHUSDC prices and
+        USDC/USDT cross-rates in this window reflect non-par USDC.
+
+  \item \textbf{Order-book timestamp alignment.}
+        Confirm that \texttt{timestamp\_utc} values in the live
+        order-book CSV are within the expected collection window and
+        that inter-snapshot gaps are approximately
+        \texttt{ORDERBOOK\_INTERVAL\_SEC} seconds.
+
+  \item \textbf{Spread non-negativity.}
+        Confirm \texttt{spread\_abs} $\geq 0$ and \texttt{best\_bid}
+        $<$ \texttt{best\_ask} for every order-book row.
+\end{enumerate}
+
+% ============================================================
+\section{Known Limitations}
+\label{sec:limits}
+
+\begin{enumerate}
+  \item \textbf{Binance only.}
+        The module imports only Binance public data. Coinbase,
+        Kraken, and other venues are not implemented.
+
+  \item \textbf{No historical order-book backfill.}
+        The order-book collector is prospective. Historical full
+        limit-order-book data are not freely available from Binance
+        public data and are not collected here.
+
+  \item \textbf{Aggregate trades are not raw fills.}
+        The finest granularity available from Binance public data
+        is aggregate trades, in which multiple fills at the same
+        price and millisecond are collapsed. The number of underlying
+        fills is \texttt{last\_trade\_id} $-$ \texttt{first\_trade\_id}
+        $+$ 1 and can be used to estimate the compression ratio, but
+        individual fill prices are not recoverable.
+
+  \item \textbf{Flat retry wait.}
+        \texttt{download\_zip} uses a fixed \texttt{RETRY\_SLEEP\_SECONDS
+        = 2.0} second wait between retries, not exponential backoff.
+        For transient server-side throttling, this may be insufficient
+        to avoid repeated failures. Increasing \texttt{RETRY\_SLEEP\_SECONDS}
+        in \texttt{cex\_config.py} is recommended if \texttt{failed}
+        rows appear in the manifest.
+
+  \item \textbf{No symbol-availability pre-check.}
+        The module does not query Binance for the exchange information
+        endpoint before requesting files. Periods before a symbol's
+        launch date produce \texttt{missing\_404} entries in the
+        manifest; they are not treated as errors.
+
+  \item \textbf{USDC depeg.}
+        USDC briefly depegged in March 2023 (approximately
+        2023-03-10 to 2023-03-13). All ETHUSDC prices and the
+        USDCUSDT cross-rate in this window are measured in non-par
+        USDC. Analyses spanning this period should apply a correction
+        or exclude the affected dates.
+
+  \item \textbf{No trade-flow classification.}
+        The module does not classify aggregate trades as arbitrage,
+        market-making, noise flow, or informed trading. Flow
+        classification must be performed in the processing stage
+        using external reference prices or structural models.
+
+  \item \textbf{Local clock timestamps in order-book data.}
+        The \texttt{timestamp\_utc} in order-book output files
+        reflects the local system clock at the time the row was
+        written, not the server-side time embedded in the Binance
+        REST response. Latency between the HTTP request and the
+        write operation (typically $<$100 ms) introduces a small
+        timing error.
+
+  \item \textbf{Path coupling.}
+        \texttt{cex\_config.py} uses \texttt{.parents[3]} to locate
+        the project root. Moving any script to a different directory
+        depth silently redirects output to a wrong location.
+
+  \item \textbf{No DEX--CEX merge.}
+        This module downloads raw CEX inputs only. Merging with
+        Uniswap v3 DEX data and computing $d_t$ are deferred to
+        \texttt{scripts\textbackslash process\_data\textbackslash CEX}.
+\end{enumerate}
+
+% ============================================================
+\section{Recommended Processing Stage}
+\label{sec:proc}
+
+Processing scripts should be placed in:
+\begin{lstlisting}
+C:\Courses\thesis_AMM\scripts\process_data\CEX
+\end{lstlisting}
+and write outputs to:
+\begin{lstlisting}
+C:\Courses\thesis_AMM\data_processed\CEX
+\end{lstlisting}
+
+Recommended processing tasks:
+\begin{enumerate}
+  \item Read raw kline CSVs with column names from
+        \texttt{KLINE\_COLUMNS}; assign header, cast types.
+  \item Read raw aggregate-trade CSVs with column names from
+        \texttt{AGG\_TRADE\_COLUMNS}.
+  \item Convert millisecond timestamps to UTC datetimes:
+        \texttt{pd.to\_datetime(col, unit="ms", utc=True)}.
+  \item Cast all price and quantity fields from decimal strings to
+        \texttt{float64}; cast ID and count fields to \texttt{int64}.
+  \item Check for missing periods using the manifest
+        \texttt{missing\_404} rows and decide how to handle gaps.
+  \item Build 1-minute and 5-minute reference-price panels
+        ($p_t^{*}$, $r_t$, $\sigma_t$).
+  \item Aggregate trade counts ($N_t^{\mathrm{CEX}}$), volumes
+        ($Q_t^{\mathrm{CEX}}$), and average trade sizes
+        ($\bar{q}_t^{\mathrm{CEX}}$).
+  \item Construct synthetic ETH/USDC from ETHUSDT and USDCUSDT
+        where ETHUSDC is unavailable:
+        $p^{\mathrm{ETH/USDC}}_t \approx p^{\mathrm{ETH/USDT}}_t
+        / p^{\mathrm{USDC/USDT}}_t$.
+  \item Merge CEX reference prices with Uniswap v3 WETH/USDC event
+        data (nearest-previous or interpolated join by timestamp).
+  \item Compute the DEX--CEX deviation:
+        $d_t = (p_t^{\mathrm{AMM}} - p_t^{*}) / p_t^{*}$.
+  \item Read live order-book CSV summaries; compute spread and
+        depth statistics.
+  \item Export clean processed panels to
+        \texttt{data\_processed\textbackslash CEX}.
+\end{enumerate}
+
+% ============================================================
+\section{Installation and Execution Checklist}
+\label{sec:checklist}
+
+\begin{enumerate}
+  \item Place scripts in the correct directories:
+        \begin{itemize}
+          \item \texttt{run\_cex.py} in
+                \path{C:\Courses\thesis_AMM\scripts\import_data}
+          \item All other CEX scripts in
+                \path{C:\Courses\thesis_AMM\scripts\import_data\CEX}
+        \end{itemize}
+
+  \item Install dependencies from the project root:
+\begin{lstlisting}
+pip install -r requirements.txt
+\end{lstlisting}
+
+  \item Run the small test import (from the project root):
+\begin{lstlisting}
+python scripts\import_data\CEX\main_import_cex.py
+\end{lstlisting}
+  This downloads ETHUSDC daily klines and aggTrades for
+  2024-01-01 to 2024-01-02 only.
+
+  \item Verify outputs:
+        \begin{itemize}
+          \item \texttt{download\_manifest.csv} exists and has rows
+                with status containing \texttt{extracted}.
+          \item CSV files exist under
+                \path{data_raw\CEX\binance\spot\daily\klines\ETHUSDC\1m}
+                and \texttt{5m}.
+          \item CSV files exist under
+                \path{data_raw\CEX\binance\spot\daily\aggTrades\ETHUSDC}.
+          \item ZIP archives exist under
+                \path{data_raw\CEX\binance\zip_archives}.
+        \end{itemize}
+
+  \item After the test succeeds, run the full historical import:
+\begin{lstlisting}
+python scripts\import_data\run_cex.py
+\end{lstlisting}
+  \texttt{run\_cex.py} invokes \texttt{main\_import\_cex.py
+  --full-history} and sets \texttt{PYTHONIOENCODING=utf-8}
+  for correct console output on Windows. Runtime: 20--60 min.
+
+  \item To collect live order-book data, pass \texttt{--orderbook}
+        to the runner:
+\begin{lstlisting}
+python scripts\import_data\run_cex.py --orderbook
+\end{lstlisting}
+  Or run the collector independently:
+\begin{lstlisting}
+python scripts\import_data\CEX\collect_binance_orderbook_rest.py ^
+  --symbols ETHUSDC,ETHUSDT --seconds 0 --interval-sec 10
+\end{lstlisting}
+\end{enumerate}
+
+\end{document}
