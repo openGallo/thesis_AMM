@@ -1,18 +1,20 @@
 # thesis_AMM — Public Repository
 
-Empirical study of the USDC/WETH 0.05% pool (`0x88e6A0c2ddd26FEEb64F039a2c41296FcB3f5640`) over May 2021–December 2024.
+Empirical study of the USDC/WETH 0.05% pool (`0x88e6A0c2ddd26FEEb64F039a2c41296FcB3f5640`) over January 2022 – December 2024, plus a multi-fee-tier extension covering the 0.01%, 0.30%, and 1.00% pools.
 
-> **Note:** Analysis scripts, thesis LaTeX source, and figures live in a **private companion repository** (`thesis-AMM-private`). This public repo contains only the data-import and processing pipeline.
+> **Note:** Analysis scripts, thesis LaTeX source, and figures live in a **private companion repository** (`thesis-AMM-private`). This public repo contains the data-import, processing pipeline, and integrity checks only.
 
-### Key Results
+### Key Results (Main Study Pool — USDC/WETH 0.05%)
 
 | Quantity | Value |
 |---|---|
-| Break-even volatility σ\* | 63.4% (annualised) |
-| Reduced-form jump (Δlog TVL +24h) | −0.00312 (SE = 0.00089, *p* < 0.001) |
-| LATE (fuzzy RD / Wald) | −0.0167 (SE = 0.0051) |
-| McCrary density test | *p* = 0.44 (no manipulation) |
-| Sample | 31,258 hourly observations |
+| Break-even volatility σ\* | 127.7% ann. (τ_d ≈ 0.975) |
+| Reduced-form jump at σ\* | +0.000031 (SE = 0.000024, *p* = 0.20, n.s.) |
+| First stage ΔP(LVR > fee) | +0.105 (SE = 0.104, F = 1.02, weak) |
+| LATE (fuzzy RD / Wald) | +0.000296 (*p* = 0.43, n.s.) |
+| Sample | N = 22,368 hourly obs., h_IK = 8.25 pp, N_local = 441 |
+
+Null result is economically interpretable: with τ_d ≈ 0.975 the σ\* threshold falls in the far right tail of the volatility distribution; only ~10.8% of hours breach it.
 
 ---
 
@@ -22,41 +24,52 @@ Empirical study of the USDC/WETH 0.05% pool (`0x88e6A0c2ddd26FEEb64F039a2c41296F
 thesis_AMM/
 │
 ├── scripts/
+│   ├── check_data_integrity.py     ← validate all raw data after import
+│   │
 │   ├── import_data/
-│   │   ├── run_cex.py                  ← run all CEX imports
-│   │   ├── run_dex.py                  ← run all DEX imports
+│   │   ├── run_cex.py              ← run all CEX imports (0.05% study pool)
+│   │   ├── run_dex.py              ← run all DEX imports (0.05% study pool)
+│   │   ├── run_multitier_dex.py    ← run DEX imports for 0.01%, 0.30%, 1.00% pools
+│   │   │
 │   │   ├── CEX/
-│   │   │   ├── main_import_cex.py      Binance klines + aggTrades downloader
+│   │   │   ├── main_import_cex.py             Binance klines + aggTrades downloader
 │   │   │   ├── fetch_binance_klines.py
 │   │   │   ├── fetch_binance_agg_trades.py
 │   │   │   ├── collect_binance_orderbook_rest.py
 │   │   │   ├── binance_download_utils.py
 │   │   │   └── cex_config.py
+│   │   │
 │   │   └── DEX/
-│   │       ├── fetch_uniswap_pool_timeseries.py   hourly/daily pool OHLCV
-│   │       ├── fetch_all_monthly.py               swaps, mints, burns
-│   │       ├── fetch_uniswap_extra_events.py      collects, flashes
-│   │       ├── fetch_uniswap_positions.py         current LP positions
-│   │       ├── fetch_uniswap_tick_snapshots.py    month-end tick liquidity
-│   │       └── dex_utils.py                       shared GraphQL helpers
+│   │       ├── dex_utils.py                          shared GraphQL helpers + API key
+│   │       ├── pool_addresses.py                     central registry of all pool addresses
+│   │       ├── fetch_uniswap_pool_timeseries.py      0.05% hourly/daily OHLCV
+│   │       ├── fetch_uniswap_pool_001pct_timeseries.py  0.01% hourly/daily OHLCV
+│   │       ├── fetch_uniswap_pool_030pct_timeseries.py  0.30% hourly/daily OHLCV
+│   │       ├── fetch_uniswap_pool_100pct_timeseries.py  1.00% hourly/daily OHLCV
+│   │       ├── fetch_all_monthly.py                  swaps, mints, burns
+│   │       ├── fetch_uniswap_extra_events.py         collects, flashes
+│   │       ├── fetch_uniswap_positions.py            current LP positions
+│   │       ├── fetch_uniswap_tick_snapshots.py       month-end tick liquidity
+│   │       └── reconstruct_pool_timeseries_from_swaps.py
 │   │
 │   └── process_data/
-│       ├── run_all.py                  ← run full processing pipeline
+│       ├── run_all.py              ← run full processing pipeline
 │       ├── CEX/
-│       │   ├── process_cex_price.py    1m + hourly price panel, realized vol
-│       │   └── process_cex_orderbook.py  daily spread and depth summary
+│       │   ├── process_cex_price.py       1m + hourly price panel, realized vol
+│       │   └── process_cex_orderbook.py   daily spread and depth summary
 │       ├── DEX/
 │       │   ├── process_dex_pool_hourly.py   pool OHLCV, fee APR, vol/TVL
 │       │   ├── process_dex_swaps.py         swap panel, gas costs, direction
 │       │   ├── process_dex_lp_positions.py  LP P&L, range metrics, duration
 │       │   └── process_dex_lvr.py           Loss-Versus-Rebalancing estimates
 │       ├── merged/
-│       │   └── process_merged_panel.py  DEX+CEX join, basis bps, arb flags
+│       │   └── process_merged_panel.py   DEX+CEX join, basis bps, arb flags
 │       └── calibration/
-│           └── process_calibration.py   GBM, Poisson-lognormal, gas AR(1)
+│           └── process_calibration.py    GBM, Poisson-lognormal, gas AR(1)
 │
-├── data_raw/          (gitignored — populated by import scripts)
-├── data_processed/    (gitignored — populated by processing scripts)
+├── reports/               (gitignored — generated by check_data_integrity.py)
+├── data_raw/              (gitignored — populated by import scripts)
+├── data_processed/        (gitignored — populated by processing scripts)
 └── output/
     ├── figures/
     └── tables/
@@ -69,25 +82,41 @@ thesis_AMM/
 | Source | What | Coverage |
 |---|---|---|
 | [Uniswap v3 subgraph](https://thegraph.com/explorer/) | Pool OHLCV, swaps, mints, burns, collects, positions | May 2021 → present |
-| [Binance public archive](https://data.binance.vision) | ETHUSDC, ETHUSDT, USDCUSDT klines (1m, 5m) | Jan 2022 → Apr 2026 |
+| [Binance public archive](https://data.binance.vision) | ETHUSDC, ETHUSDT, USDCUSDT klines (1m, 5m) + aggTrades | Jan 2022 → Apr 2026 |
 
-> ETHUSDC was listed on Binance in August 2022. For earlier months the processing script constructs a synthetic rate: `ETHUSDT / USDCUSDT`.
+Known data gaps (permanent — documented in `check_data_integrity.py`):
+- ETHUSDC not listed on Binance before August 2022
+- ETHUSDC and USDCUSDT: months Oct 2022 – Feb 2023 return HTTP 404 from Binance archive
+
+---
+
+## Pool addresses (Uniswap v3, Ethereum mainnet)
+
+| Fee tier | Pool address | Data directory |
+|---|---|---|
+| 0.01% | `0xe0554a476a092703abdb3ef35c80e0d76d32939f` | `data_raw/multitier/fee_100/` |
+| **0.05% (main)** | `0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640` | `data_raw/DEX/` |
+| 0.30% | `0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8` | `data_raw/multitier/fee_3000/` |
+| 1.00% | `0x7bea39867e4169dbe237d55c8242a8f2fcdcc387` | `data_raw/multitier/fee_10000/` |
 
 ---
 
 ## Setup
 
-**Requirements:** Python 3.13+
+**Requirements:** Python 3.10+
 
 ```powershell
-pip install requests pandas numpy
+pip install -r requirements.txt
 ```
 
-**API key** (The Graph, required for DEX imports):
+**API key** (The Graph — required for all DEX imports):
 
 ```powershell
-setx THEGRAPH_API_KEY "your_key_here"
-# Restart terminal after running setx
+# Option A: environment variable (permanent)
+setx THEGRAPH_API_KEY "your_key_here"   # restart terminal after
+
+# Option B: .env file at project root (gitignored)
+echo THEGRAPH_API_KEY=your_key_here > .env
 ```
 
 ---
@@ -100,17 +129,32 @@ Open a terminal in the project root. Run in this order:
 ```powershell
 python scripts/import_data/run_cex.py
 ```
-Downloads Binance klines for ETHUSDC, ETHUSDT, USDCUSDT (monthly files, 2022–2026).
+Downloads Binance klines (1m, 5m) and aggTrades for ETHUSDC, ETHUSDT, USDCUSDT.
 **~20–60 min** depending on connection speed.
 
-### 2 — Import DEX data
+### 2 — Import DEX data (main 0.05% pool)
 ```powershell
 python scripts/import_data/run_dex.py --skip-ticks
 ```
-Fetches pool time series, swaps, mints, burns, collects, and LP positions from The Graph subgraph.
+Fetches pool time series, swaps, mints, burns, collects, and LP positions from The Graph.
 **~1–3 hours** (rate-limited API). Steps 1 and 2 are independent and can run in parallel.
 
-### 3 — Process everything
+### 3 — Import DEX data (multi-tier extension: 0.01%, 0.30%, 1.00%)
+```powershell
+python scripts/import_data/run_multitier_dex.py
+```
+Downloads hourly/daily pool data for the three additional fee tiers.
+**~30–90 min** per pool. Run individual pools with `--001`, `--030`, `--100`.
+
+### 4 — Validate all data
+```powershell
+python scripts/check_data_integrity.py
+```
+Checks coverage, row counts, OHLCV sanity, temporal gaps, column completeness, and
+fee-tier consistency for every dataset. Saves a full report with remediation instructions to
+`reports/data_integrity_YYYY-MM-DD.txt`. Exit code 1 if any check fails.
+
+### 5 — Process everything
 ```powershell
 python scripts/process_data/run_all.py
 ```
@@ -131,8 +175,7 @@ Runs all processing scripts in dependency order. **~2–5 min.**
 | `data_processed/DEX/dex_lp_positions.csv` | LP P&L by position, range width, duration |
 | `data_processed/DEX/dex_lvr_hourly.csv` | LVR estimates (TVL approx + v3 active-liquidity) |
 | `data_processed/merged/merged_hourly.csv` | DEX+CEX joined panel, basis bps, arb flag |
-| `data_processed/calibration/calibration_params.json` | All simulation parameters (JSON) |
-| `data_processed/calibration/calibration_summary.csv` | Same, flat CSV for quick inspection |
+| `data_processed/calibration/calibration_params.json` | All calibration parameters (JSON) |
 
 ---
 
@@ -144,13 +187,11 @@ Runs all processing scripts in dependency order. **~2–5 min.**
 | `fee_apr_ann` | `fees_usd / tvl_usd × 24 × 365.25` | dex_pool_hourly |
 | `realized_vol_24h_ann` | `std(log_ret_1h) × √8760` (rolling 24h) | cex_price_hourly |
 | `dex_cex_basis_bps` | `(dex_price − cex_price) / cex_price × 10000` | merged_hourly |
-| `arbitrage_flag` | `\|basis_bps\| > 5` (exceeds 0.05% fee) | merged_hourly |
 | `lvr_rate_ann` | `σ²_ann / 8` (fraction of TVL per year) | dex_lvr_hourly |
-| `net_pnl_usd` | `burns_usd + collects_usd − mints_usd` | dex_lp_positions |
+| `sigma_star` | `√(8 × fee_rate × tau_d)` (ann.) | dex_pool_hourly |
 
 ---
 
 ## Data policy
 
-Raw and processed datasets are **not committed to GitHub** (gitignored).
-The repository stores only code and documentation. All data can be fully reproduced by running the import and processing scripts above.
+Raw and processed datasets are **not committed to GitHub** (gitignored). The repository stores only code and documentation. All data can be fully reproduced by running the import and processing scripts above.

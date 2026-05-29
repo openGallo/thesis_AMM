@@ -79,10 +79,9 @@ desktop.ini
 .claude/
 
 # ============================================================
-# All analysis / processing scripts (moved to private repo)
+# Analysis scripts (live in private companion repo)
 # ============================================================
 scripts/analysis/
-scripts/process_data/
 generate_thesis.py
 scripts/rl_lp_agent.py
 
