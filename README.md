@@ -4,18 +4,6 @@ Empirical study of the USDC/WETH 0.05% pool (`0x88e6A0c2ddd26FEEb64F039a2c41296F
 
 > **Note:** Analysis scripts, thesis LaTeX source, and figures live in a **private companion repository** (`thesis-AMM-private`). This public repo contains the data-import pipeline, processing pipeline, and integrity/benchmark checks only.
 
-### Key Results (Main Study Pool — USDC/WETH 0.05%)
-
-| Quantity | Value |
-|---|---|
-| Break-even volatility σ\* | 127.7% ann. (τ_d ≈ 0.975) |
-| Reduced-form jump at σ\* | +0.000031 (SE = 0.000024, *p* = 0.20, n.s.) |
-| First stage ΔP(LVR > fee) | +0.105 (SE = 0.104, F = 1.02, weak) |
-| LATE (fuzzy RD / Wald) | +0.000296 (*p* = 0.43, n.s.) |
-| Sample | N = 22,368 hourly obs., h_IK = 8.25 pp, N_local = 441 |
-
-Null result is economically interpretable: with τ_d ≈ 0.975 the σ\* threshold falls in the far right tail of the volatility distribution; only ~3.5% of hours breach it (CEX 24h rolling window, study period 2022–2024).
-
 ---
 
 ## Repository structure
