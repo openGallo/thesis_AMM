@@ -49,13 +49,14 @@ def _load_env() -> None:
 
 
 _load_env()
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")  # propagate UTF-8 to child processes
 
 SCRIPT_DIR = Path(__file__).parent / "DEX"
 
 PIPELINE: list[tuple[str, str]] = [
-    ("fetch_uniswap_pool_001pct_timeseries.py", "USDC/WETH 0.01%%  →  data_raw/multitier/fee_100/"),
-    ("fetch_uniswap_pool_030pct_timeseries.py", "USDC/WETH 0.30%%  →  data_raw/multitier/fee_3000/"),
-    ("fetch_uniswap_pool_100pct_timeseries.py", "USDC/WETH 1.00%%  →  data_raw/multitier/fee_10000/"),
+    ("fetch_uniswap_pool_001pct_timeseries.py", "USDC/WETH 0.01%%  ->  data_raw/multitier/fee_100/"),
+    ("fetch_uniswap_pool_030pct_timeseries.py", "USDC/WETH 0.30%%  ->  data_raw/multitier/fee_3000/"),
+    ("fetch_uniswap_pool_100pct_timeseries.py", "USDC/WETH 1.00%%  ->  data_raw/multitier/fee_10000/"),
 ]
 
 

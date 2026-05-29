@@ -206,7 +206,7 @@ def main() -> None:
     print("Uniswap V3 USDC/WETH 0.05% — Flash Events")
     print("=" * 70)
     print(f"Pool:   {POOL}")
-    print(f"Period: 2021-05-05  →  2026-04-30")
+    print(f"Period: 2021-05-05  ->  2026-04-30")
     print(f"Output: {data_dir}")
     print(f"Files:  flashes_YYYY_MM.csv  (60 months)")
     print(f"Skip:   existing files are {'overwritten' if OVERWRITE else 'kept (set OVERWRITE=True to re-fetch)'}")
@@ -219,7 +219,7 @@ def main() -> None:
         end_str   = datetime.utcfromtimestamp(end_ts).strftime("%Y-%m-%d")
         out_file  = str(data_dir / f"flashes_{month_label}.csv")
 
-        print(f"\nMONTH {month_label}: {start_str} → {end_str}")
+        print(f"\nMONTH {month_label}: {start_str} -> {end_str}")
 
         if not OVERWRITE and os.path.exists(out_file) and os.path.getsize(out_file) > 0:
             existing_rows = sum(1 for _ in open(out_file)) - 1

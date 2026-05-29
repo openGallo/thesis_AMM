@@ -251,7 +251,7 @@ def _save_partial(rows: list, entity: str, output_file: str) -> None:
     tmp = output_file + ".partial"
     df = flatten_swaps(rows) if entity == "swaps" else flatten_mints_burns(rows)
     df.to_csv(tmp, index=False)
-    print(f"  [Auto-saved {len(rows):,} rows → {tmp}]")
+    print(f"  [Auto-saved {len(rows):,} rows -> {tmp}]")
 
 
 def fetch_all(query: str, entity: str, output_file: str, start_ts: int, end_ts: int) -> list:
@@ -265,9 +265,9 @@ def fetch_all(query: str, entity: str, output_file: str, start_ts: int, end_ts: 
     query_n    = 0
     start_time = time.time()
 
-    print(f"\n{'─'*60}")
+    print(f"\n{'-'*60}")
     print(f"Fetching {entity}...")
-    print(f"{'─'*60}")
+    print(f"{'-'*60}")
 
     while True:
         variables = {
@@ -320,7 +320,7 @@ def main() -> None:
     print("Uniswap V3 USDC/ETH — Since Inception to End of April 2026")
     print("=" * 60)
     print(f"Pool:   {POOL}")
-    print(f"Period: 2021-05-05  →  2026-04-30")
+    print(f"Period: 2021-05-05  ->  2026-04-30")
     print(f"Output: monthly files in {data_dir}")
     print(f"Note:   partial saves every {SAVE_EVERY:,} rows")
     print(f"Note:   existing month files are {'overwritten' if OVERWRITE else 'skipped'}")
@@ -342,7 +342,7 @@ def main() -> None:
 
         print("\n" + "=" * 60)
         print(f"MONTH: {month_label}")
-        print(f"Period: {month_start_str}  →  {month_end_str}")
+        print(f"Period: {month_start_str}  ->  {month_end_str}")
         print("=" * 60)
 
         if not OVERWRITE and all(

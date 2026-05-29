@@ -40,6 +40,7 @@ def _load_env() -> None:
                 os.environ.setdefault(k.strip(), v.strip())
 
 _load_env()
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")  # propagate UTF-8 to child processes
 
 SCRIPT_DIR = Path(__file__).parent / "DEX"
 

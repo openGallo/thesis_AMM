@@ -20,9 +20,12 @@ Output:
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")  # propagate UTF-8 to child processes
 
 CEX_DIR = Path(__file__).parent / "CEX"
 MAIN_SCRIPT = CEX_DIR / "main_import_cex.py"

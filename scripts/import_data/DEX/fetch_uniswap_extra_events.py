@@ -204,9 +204,9 @@ def fetch_entity(
     query_n    = 0
     start_time = time.time()
 
-    print(f"\n{'─'*60}")
+    print(f"\n{'-'*60}")
     print(f"Fetching {entity_name}...")
-    print(f"{'─'*60}")
+    print(f"{'-'*60}")
 
     while True:
         variables = {
@@ -237,7 +237,7 @@ def fetch_entity(
         if n % SAVE_EVERY < BATCH and n > 0:
             tmp = output_file + ".partial"
             flatten_fn(rows).to_csv(tmp, index=False)
-            print(f"  [Auto-saved {n:,} rows → {tmp}]")
+            print(f"  [Auto-saved {n:,} rows -> {tmp}]")
 
         if len(batch) < BATCH:
             break
@@ -273,7 +273,7 @@ def main() -> None:
         flashes_file  = str(data_dir / f"flashes_{month_label}.csv")
 
         print("\n" + "=" * 70)
-        print(f"MONTH {month_label}: {start_str} → {end_str}")
+        print(f"MONTH {month_label}: {start_str} -> {end_str}")
         print("=" * 70)
 
         if not OVERWRITE and all(

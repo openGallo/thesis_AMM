@@ -18,11 +18,17 @@ Usage:
 
 from __future__ import annotations
 
+import io
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
+
+# Force UTF-8 on Windows terminals that default to cp1252 / cp850.
+if hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8",
+                                  errors="replace", line_buffering=True)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_RAW     = PROJECT_ROOT / "data_raw"

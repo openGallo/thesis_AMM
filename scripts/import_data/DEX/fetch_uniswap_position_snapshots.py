@@ -220,7 +220,7 @@ def fetch_month(start_ts: int, end_ts: int, output_file: str) -> list:
         if n % SAVE_EVERY < BATCH and n > 0:
             tmp = output_file + ".partial"
             flatten_snapshots(all_rows).to_csv(tmp, index=False)
-            print(f"  [Auto-saved {n:,} rows → {tmp}]")
+            print(f"  [Auto-saved {n:,} rows -> {tmp}]")
 
         if len(batch) < BATCH:
             break
@@ -244,7 +244,7 @@ def main() -> None:
     print("Uniswap V3 USDC/WETH 0.05% — Position Snapshots")
     print("=" * 70)
     print(f"Pool:   {POOL}")
-    print(f"Period: 2021-05-05  →  2026-04-30")
+    print(f"Period: 2021-05-05  ->  2026-04-30")
     print(f"Output: {data_dir}")
     print(f"Files:  position_snapshots_YYYY_MM.csv  (60 months)")
     print(f"Skip:   existing files are {'overwritten' if OVERWRITE else 'kept (set OVERWRITE=True to re-fetch)'}")
@@ -258,7 +258,7 @@ def main() -> None:
         out_file  = str(data_dir / f"position_snapshots_{month_label}.csv")
 
         print("\n" + "=" * 70)
-        print(f"MONTH {month_label}: {start_str} → {end_str}")
+        print(f"MONTH {month_label}: {start_str} -> {end_str}")
         print("=" * 70)
 
         if not OVERWRITE and os.path.exists(out_file) and os.path.getsize(out_file) > 0:
