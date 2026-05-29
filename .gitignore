@@ -86,6 +86,11 @@ generate_thesis.py
 scripts/rl_lp_agent.py
 
 # ============================================================
+# Overleaf / LaTeX source (live in private companion repo)
+# ============================================================
+scripts/overleaf/
+
+# ============================================================
 # Thesis PDF and LaTeX outputs
 # ============================================================
 thesis_arthur_gallo.pdf
