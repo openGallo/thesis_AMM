@@ -171,15 +171,15 @@ def file_size_mb(path: Path) -> float:
 
 
 def check_exists(R: Report, path: Path, label: str,
-                 fix_cmd: str = "") -> bool:
+                 fix: str = "") -> bool:
     """Returns True if file exists and is non-empty."""
     if not path.exists():
         R.fail(f"{label} missing: {path.name}",
-               fix=fix_cmd or f"python scripts/process_data/run_all.py")
+               fix=fix or "python scripts/process_data/run_all.py")
         return False
     if path.stat().st_size == 0:
         R.fail(f"{label} exists but is empty: {path.name}",
-               fix=fix_cmd or f"python scripts/process_data/run_all.py")
+               fix=fix or "python scripts/process_data/run_all.py")
         return False
     return True
 
